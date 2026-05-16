@@ -1432,6 +1432,46 @@ describe("processDiscordMessage session routing", () => {
     expect(guildHistories.get("c1")).toEqual([]);
   });
 
+  it("keeps Discord room event history when dispatch only queues output", async () => {
+    const guildHistories = new Map();
+    const ctx = await createBaseContext({
+      shouldRequireMention: false,
+      effectiveWasMentioned: false,
+      guildHistories,
+      historyLimit: 10,
+      historyEntry: {
+        sender: "Alice",
+        body: "queued ambient note",
+        timestamp: 123,
+        messageId: "m1",
+      },
+      cfg: {
+        messages: {
+          groupChat: {
+            ambientTurns: "room_event",
+          },
+        },
+        session: { store: "/tmp/openclaw-discord-process-test-sessions.json" },
+      },
+      route: BASE_CHANNEL_ROUTE,
+    });
+    dispatchInboundMessage.mockResolvedValueOnce({
+      queuedFinal: true,
+      counts: { final: 1, tool: 0, block: 0 },
+    });
+
+    await runProcessDiscordMessage(ctx);
+
+    expect(guildHistories.get("c1")).toEqual([
+      {
+        sender: "Alice",
+        body: "queued ambient note",
+        timestamp: 123,
+        messageId: "m1",
+      },
+    ]);
+  });
+
   it("keeps Discord room event delivery correlation for queued follow-ups", async () => {
     const guildHistories = new Map();
     const ctx = await createBaseContext({

@@ -25,7 +25,6 @@ import {
 import { recordInboundSession } from "openclaw/plugin-sdk/conversation-runtime";
 import {
   hasFinalInboundReplyDispatch,
-  hasVisibleInboundReplyDispatch,
   recordChannelBotPairLoopAndCheckSuppression,
   runPreparedInboundReplyTurn,
 } from "openclaw/plugin-sdk/inbound-reply-dispatch";
@@ -834,9 +833,6 @@ export async function processDiscordMessage(
       return;
     }
     dispatchResult = preparedResult.dispatchResult;
-    if (isRoomEvent && hasVisibleInboundReplyDispatch(dispatchResult)) {
-      clearGroupHistory();
-    }
     if (isProcessAborted(abortSignal)) {
       dispatchAborted = true;
       return;
