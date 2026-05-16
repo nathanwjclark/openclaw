@@ -932,15 +932,35 @@ describe("update-cli", () => {
         installPath: "/tmp/openclaw-demo-plugin",
       },
     } as const;
+    const preUpdateConfig = {
+      channels: {
+        whatsapp: {
+          enabled: true,
+          dmPolicy: "pairing",
+        },
+      },
+    } as OpenClawConfig;
     let capturedRecords: unknown;
+    let capturedSourceConfig: unknown;
+    vi.mocked(readConfigFileSnapshot).mockResolvedValue({
+      ...baseSnapshot,
+      sourceConfig: preUpdateConfig,
+      config: preUpdateConfig,
+      runtimeConfig: preUpdateConfig,
+    });
     loadInstalledPluginIndexInstallRecords.mockResolvedValueOnce(pluginInstallRecords);
     spawn.mockImplementationOnce((_node, _argv, options) => {
       const env = (options as { env?: NodeJS.ProcessEnv }).env;
       const recordsPath = env?.OPENCLAW_UPDATE_POST_CORE_INSTALL_RECORDS_PATH;
+      const sourceConfigPath = env?.OPENCLAW_UPDATE_POST_CORE_SOURCE_CONFIG_PATH;
       if (!recordsPath) {
         throw new Error("missing post-core install records path");
       }
+      if (!sourceConfigPath) {
+        throw new Error("missing post-core source config path");
+      }
       capturedRecords = JSON.parse(fsSync.readFileSync(recordsPath, "utf-8"));
+      capturedSourceConfig = JSON.parse(fsSync.readFileSync(sourceConfigPath, "utf-8"));
       const child = new EventEmitter() as EventEmitter & {
         once: EventEmitter["once"];
       };
@@ -953,6 +973,7 @@ describe("update-cli", () => {
     await updateCommand({ yes: true, restart: false });
 
     expect(capturedRecords).toEqual(pluginInstallRecords);
+    expect(capturedSourceConfig).toEqual(preUpdateConfig);
     expect(syncPluginsForUpdateChannel).not.toHaveBeenCalled();
     expect(updateNpmInstalledPlugins).not.toHaveBeenCalled();
   });
@@ -3125,6 +3146,77 @@ describe("update-cli", () => {
       | undefined;
     expect(syncConfig?.meta?.lastTouchedVersion).toBe("2026.5.14");
     expect(lastWrite?.baseHash).toBe("post-doctor-hash");
+    expect(lastWrite?.nextConfig?.meta?.lastTouchedVersion).toBe("2026.5.14");
+  });
+
+  it("restores pre-update channels when post-core resume sees post-doctor config without them", async () => {
+    const tempDir = createCaseDir("openclaw-update");
+    const sourceConfigPath = path.join(tempDir, "source-config.json");
+    const preUpdateConfig = {
+      update: { channel: "stable" },
+      channels: {
+        whatsapp: {
+          enabled: true,
+          dmPolicy: "pairing",
+        },
+      },
+    } as OpenClawConfig;
+    const postDoctorConfig = {
+      update: { channel: "stable" },
+      meta: { lastTouchedVersion: "2026.5.14" },
+    } as OpenClawConfig;
+    await fs.mkdir(tempDir, { recursive: true });
+    await fs.writeFile(sourceConfigPath, `${JSON.stringify(preUpdateConfig)}\n`, "utf-8");
+    vi.mocked(readConfigFileSnapshot).mockResolvedValue({
+      ...baseSnapshot,
+      sourceConfig: postDoctorConfig,
+      config: postDoctorConfig,
+      runtimeConfig: postDoctorConfig,
+      hash: "post-doctor-hash",
+    });
+    syncPluginsForUpdateChannel.mockImplementation(async ({ config }) => ({
+      changed: false,
+      config,
+      summary: {
+        switchedToBundled: [],
+        switchedToNpm: [],
+        warnings: [],
+        errors: [],
+      },
+    }));
+    updateNpmInstalledPlugins.mockImplementation(async ({ config }) => ({
+      changed: false,
+      config,
+      outcomes: [],
+    }));
+
+    await withEnvAsync(
+      {
+        OPENCLAW_UPDATE_POST_CORE: "1",
+        OPENCLAW_UPDATE_POST_CORE_CHANNEL: "stable",
+        OPENCLAW_UPDATE_POST_CORE_SOURCE_CONFIG_PATH: sourceConfigPath,
+      },
+      async () => {
+        await updateCommand({ yes: true, restart: false });
+      },
+    );
+
+    const syncConfig = syncPluginCall()?.config as
+      | (OpenClawConfig & { meta?: { lastTouchedVersion?: string } })
+      | undefined;
+    const lastWrite = lastReplaceConfigCall() as
+      | {
+          baseHash?: string;
+          nextConfig?: OpenClawConfig & {
+            meta?: { lastTouchedVersion?: string };
+            channels?: { whatsapp?: { enabled?: boolean; dmPolicy?: string } };
+          };
+        }
+      | undefined;
+    expect(syncConfig?.channels?.whatsapp).toEqual(preUpdateConfig.channels?.whatsapp);
+    expect(syncConfig?.meta?.lastTouchedVersion).toBe("2026.5.14");
+    expect(lastWrite?.baseHash).toBe("post-doctor-hash");
+    expect(lastWrite?.nextConfig?.channels?.whatsapp).toEqual(preUpdateConfig.channels?.whatsapp);
     expect(lastWrite?.nextConfig?.meta?.lastTouchedVersion).toBe("2026.5.14");
   });
 
