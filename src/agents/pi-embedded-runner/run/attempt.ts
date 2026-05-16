@@ -16,6 +16,10 @@ import {
 } from "../../../config/sessions/store.js";
 import { resolveContextEngineOwnerPluginId } from "../../../context-engine/registry.js";
 import type { AssembleResult } from "../../../context-engine/types.js";
+import {
+  mergeExtraSystemPrompts,
+  renderExtrapolationContextForRun,
+} from "../../../extrapolation/context-injection.js";
 import { emitTrustedDiagnosticEvent } from "../../../infra/diagnostic-events.js";
 import {
   createChildDiagnosticTraceContext,
@@ -1655,6 +1659,15 @@ export async function runEmbeddedAttempt(
       config: params.config,
       agentId: sessionAgentId,
     });
+    const extrapolationContextBlock = renderExtrapolationContextForRun({
+      sessionKey: params.sessionKey,
+      agentId: sessionAgentId,
+      config: params.config,
+    }).rendered;
+    const mergedExtraSystemPrompt = mergeExtraSystemPrompts(
+      params.extraSystemPrompt,
+      extrapolationContextBlock,
+    );
     const attemptSystemPrompt = buildAttemptSystemPrompt({
       isRawModelRun,
       systemPromptOverrideText,
@@ -1665,7 +1678,7 @@ export async function runEmbeddedAttempt(
         workspaceDir: effectiveWorkspace,
         defaultThinkLevel: params.thinkLevel,
         reasoningLevel: params.reasoningLevel ?? "off",
-        extraSystemPrompt: params.extraSystemPrompt,
+        extraSystemPrompt: mergedExtraSystemPrompt,
         ownerNumbers: params.ownerNumbers,
         reasoningTagHint,
         heartbeatPrompt,
