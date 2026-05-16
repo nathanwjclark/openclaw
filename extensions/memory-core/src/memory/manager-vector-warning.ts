@@ -4,6 +4,10 @@ export function logMemoryVectorDegradedWrite(params: {
   chunkCount: number;
   warningShown: boolean;
   loadError?: string;
+  /** Reason the embedding provider is unavailable, if known. When set, the
+   *  warning attributes the degradation to the provider rather than to
+   *  sqlite-vec — sqlite-vec only fails when there's a captured `loadError`. */
+  providerUnavailableReason?: string;
   warn: (message: string) => void;
 }): boolean {
   if (
@@ -14,9 +18,18 @@ export function logMemoryVectorDegradedWrite(params: {
   ) {
     return params.warningShown;
   }
-  const errDetail = params.loadError ? `: ${params.loadError}` : "";
-  params.warn(
-    `chunks_vec not updated — sqlite-vec unavailable${errDetail}. Vector recall degraded. Further duplicate warnings suppressed.`,
-  );
+  // Two distinct failure modes; the legacy message conflated them.
+  if (params.loadError) {
+    params.warn(
+      `chunks_vec not updated — sqlite-vec extension failed to load: ${params.loadError}. FTS recall still works. Further duplicate warnings suppressed.`,
+    );
+  } else {
+    const reason = params.providerUnavailableReason
+      ? `: ${params.providerUnavailableReason}`
+      : " — no embedding provider is configured for memorySearch";
+    params.warn(
+      `chunks_vec not updated${reason}. FTS recall still works; sqlite-vec is available but unused. Further duplicate warnings suppressed.`,
+    );
+  }
   return true;
 }

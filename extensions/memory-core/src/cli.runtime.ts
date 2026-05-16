@@ -1148,15 +1148,34 @@ export async function runMemoryIndex(opts: MemoryCommandOptions) {
           }
           const postIndexStatus = manager.status();
           const vectorEnabled = postIndexStatus.vector?.enabled ?? false;
-          const vectorAvailable =
-            postIndexStatus.vector?.storeAvailable ?? postIndexStatus.vector?.available;
-          const vectorLoadErr = postIndexStatus.vector?.loadError;
-          if (vectorEnabled && vectorAvailable === false) {
+          const storeAvailable = postIndexStatus.vector?.storeAvailable;
+          const semanticAvailable =
+            postIndexStatus.vector?.semanticAvailable ?? postIndexStatus.vector?.available;
+          const vectorLoadErr =
+            typeof postIndexStatus.vector?.loadError === "string"
+              ? postIndexStatus.vector.loadError
+              : undefined;
+          const providerReason =
+            typeof postIndexStatus.custom?.providerUnavailableReason === "string"
+              ? postIndexStatus.custom.providerUnavailableReason
+              : undefined;
+          // Distinguish two distinct failure modes that previously both surfaced as
+          // "sqlite-vec unavailable" — a confusing message that led operators to
+          // misdiagnose unrelated SQLite subsystems as broken.
+          //   1. storeAvailable === false → sqlite-vec extension genuinely failed to load.
+          //   2. semanticAvailable === false (without store failure) → no embedding
+          //      provider is wired up; sqlite-vec was never exercised.
+          if (vectorEnabled && storeAvailable === false) {
             const errDetail = vectorLoadErr ? `: ${vectorLoadErr}` : "";
-            // Indexing still persisted chunks/FTS state; keep the command successful but
-            // emit a stderr warning so operators and scripts can detect degraded recall.
             defaultRuntime.error(
-              `Memory index WARNING (${agentId}): chunks_vec not updated — sqlite-vec unavailable${errDetail}. Vector recall degraded.`,
+              `Memory index WARNING (${agentId}): vector recall degraded — sqlite-vec extension failed to load${errDetail}. FTS recall still works.`,
+            );
+          } else if (vectorEnabled && semanticAvailable === false) {
+            const reason = providerReason
+              ? `: ${providerReason}`
+              : " — no embedding provider is configured for memorySearch";
+            defaultRuntime.error(
+              `Memory index WARNING (${agentId}): vector recall degraded${reason}. FTS recall still works; sqlite-vec is available but unused.`,
             );
           } else {
             defaultRuntime.log(`Memory index updated (${agentId}).`);
