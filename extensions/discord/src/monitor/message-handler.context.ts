@@ -1,6 +1,7 @@
 import {
   buildChannelTurnContext,
   formatInboundEnvelope,
+  resolveAmbientGroupInboundTurnKind,
   resolveEnvelopeFormatOptions,
   toInboundMediaFacts,
 } from "openclaw/plugin-sdk/channel-inbound";
@@ -88,6 +89,7 @@ export async function buildDiscordMessageProcessContext(params: {
     boundSessionKey,
     route,
     commandAuthorized,
+    historyEntry,
   } = ctx;
 
   const fromLabel = isDirectMessage
@@ -326,6 +328,15 @@ export async function buildDiscordMessageProcessContext(params: {
           storePath,
           sessionKey: effectiveSessionKey,
         });
+  const inboundTurnKind = resolveAmbientGroupInboundTurnKind({
+    cfg,
+    agentId: route.agentId,
+    facts: {
+      isGroup: isGuildMessage,
+      wasMentioned: ctx.effectiveWasMentioned,
+      hasControlCommand: ctx.hasControlCommand,
+    },
+  });
 
   const ctxPayload = buildChannelTurnContext({
     channel: "discord",
@@ -369,6 +380,7 @@ export async function buildDiscordMessageProcessContext(params: {
       originatingTo,
     },
     message: {
+      inboundTurnKind,
       body: combinedBody,
       rawBody: preflightAudioTranscript ?? baseText,
       bodyForAgent: preflightAudioTranscript ?? baseText ?? text,
@@ -422,6 +434,13 @@ export async function buildDiscordMessageProcessContext(params: {
       OwnerAllowFrom: ownerAllowFrom,
     },
   });
+  if (inboundTurnKind === "room_event" && shouldIncludeChannelHistory && historyEntry) {
+    channelHistory.record({
+      historyKey: messageChannelId,
+      limit: historyLimit,
+      entry: historyEntry,
+    });
+  }
   const persistedSessionKey = ctxPayload.SessionKey ?? route.sessionKey;
 
   if (shouldLogVerbose()) {

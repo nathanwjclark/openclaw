@@ -800,6 +800,7 @@ export async function preflightDiscordMessage(
     shouldBypassMention: mentionDecision.shouldBypassMention,
     effectiveWasMentioned,
     canDetectMention,
+    hasControlCommand: hasControlCommandInMessage,
     historyEntry,
     botLoopProtection,
   });

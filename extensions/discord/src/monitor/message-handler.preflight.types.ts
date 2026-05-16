@@ -89,6 +89,7 @@ export type DiscordMessagePreflightContext = DiscordMessagePreflightSharedFields
   shouldBypassMention: boolean;
   effectiveWasMentioned: boolean;
   canDetectMention: boolean;
+  hasControlCommand: boolean;
 
   historyEntry?: HistoryEntry;
   threadBindings: DiscordThreadBindingLookup;

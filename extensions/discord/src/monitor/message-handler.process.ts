@@ -25,6 +25,7 @@ import {
 import { recordInboundSession } from "openclaw/plugin-sdk/conversation-runtime";
 import {
   hasFinalInboundReplyDispatch,
+  hasVisibleInboundReplyDispatch,
   recordChannelBotPairLoopAndCheckSuppression,
   runPreparedInboundReplyTurn,
 } from "openclaw/plugin-sdk/inbound-reply-dispatch";
@@ -32,6 +33,7 @@ import { resolveMarkdownTableMode } from "openclaw/plugin-sdk/markdown-table-run
 import { getAgentScopedMediaLocalRoots } from "openclaw/plugin-sdk/media-runtime";
 import { resolveChunkMode } from "openclaw/plugin-sdk/reply-chunking";
 import type { ReplyPayload } from "openclaw/plugin-sdk/reply-dispatch-runtime";
+import { createChannelHistoryWindow } from "openclaw/plugin-sdk/reply-history";
 import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-payload";
 import { danger, logVerbose, shouldLogVerbose } from "openclaw/plugin-sdk/runtime-env";
 import { resolveDiscordMaxLinesPerMessage } from "../accounts.js";
@@ -190,10 +192,34 @@ export async function processDiscordMessage(
   }
   const { createReplyDispatcherWithTyping, dispatchInboundMessage, settleReplyDispatcher } =
     await loadReplyRuntime();
-  const sourceReplyDeliveryMode = resolveChannelMessageSourceReplyDeliveryMode({
-    cfg,
-    ctx: { ChatType: isGuildMessage ? "channel" : undefined },
+  const processContext = await buildDiscordMessageProcessContext({
+    ctx,
+    text,
+    mediaList,
   });
+  if (!processContext) {
+    return;
+  }
+  const {
+    ctxPayload,
+    persistedSessionKey,
+    turn,
+    replyPlan,
+    deliverTarget,
+    replyTarget,
+    replyReference,
+  } = processContext;
+  const isRoomEvent = ctxPayload.InboundTurnKind === "room_event";
+  observer?.onReplyPlanResolved?.({
+    createdThreadId: replyPlan.createdThreadId,
+    sessionKey: persistedSessionKey,
+  });
+  const sourceReplyDeliveryMode = isRoomEvent
+    ? "message_tool_only"
+    : resolveChannelMessageSourceReplyDeliveryMode({
+        cfg,
+        ctx: { ChatType: isGuildMessage ? "channel" : undefined },
+      });
   const sourceRepliesAreToolOnly = sourceReplyDeliveryMode === "message_tool_only";
   const ackReaction = resolveAckReaction(cfg, route.agentId, {
     channel: "discord",
@@ -215,9 +241,10 @@ export async function processDiscordMessage(
         shouldBypassMention,
       }),
     );
-  const shouldSendAckReaction = shouldAckReaction();
+  const shouldSendAckReaction = !isRoomEvent && shouldAckReaction();
   const statusReactionsExplicitlyEnabled = cfg.messages?.statusReactions?.enabled === true;
   const statusReactionsEnabled =
+    !isRoomEvent &&
     shouldSendAckReaction &&
     cfg.messages?.statusReactions?.enabled !== false &&
     (!sourceRepliesAreToolOnly || statusReactionsExplicitlyEnabled);
@@ -355,27 +382,6 @@ export async function processDiscordMessage(
     reactionAdapter: discordAdapter,
     target: `${messageChannelId}/${message.id}`,
   });
-  const processContext = await buildDiscordMessageProcessContext({
-    ctx,
-    text,
-    mediaList,
-  });
-  if (!processContext) {
-    return;
-  }
-  const {
-    ctxPayload,
-    persistedSessionKey,
-    turn,
-    replyPlan,
-    deliverTarget,
-    replyTarget,
-    replyReference,
-  } = processContext;
-  observer?.onReplyPlanResolved?.({
-    createdThreadId: replyPlan.createdThreadId,
-    sessionKey: persistedSessionKey,
-  });
 
   const typingChannelId = deliverTarget.startsWith("channel:")
     ? deliverTarget.slice("channel:".length)
@@ -411,6 +417,15 @@ export async function processDiscordMessage(
     accountId,
   });
   const chunkMode = resolveChunkMode(cfg, "discord", accountId);
+  const clearGroupHistory = () => {
+    if (!isGuildMessage) {
+      return;
+    }
+    createChannelHistoryWindow({ historyMap: guildHistories }).clear({
+      historyKey: messageChannelId,
+      limit: historyLimit,
+    });
+  };
 
   const deliverChannelId = deliverTarget.startsWith("channel:")
     ? deliverTarget.slice("channel:".length)
@@ -639,12 +654,14 @@ export async function processDiscordMessage(
       ctxPayload,
       recordInboundSession,
       record: turn.record,
-      history: {
-        isGroup: isGuildMessage,
-        historyKey: messageChannelId,
-        historyMap: guildHistories,
-        limit: historyLimit,
-      },
+      history: isRoomEvent
+        ? undefined
+        : {
+            isGroup: isGuildMessage,
+            historyKey: messageChannelId,
+            historyMap: guildHistories,
+            limit: historyLimit,
+          },
       onPreDispatchFailure: settleDispatchBeforeStart,
       runDispatch: async () =>
         await dispatchInboundMessage({
@@ -656,6 +673,7 @@ export async function processDiscordMessage(
             abortSignal,
             skillFilter: channelConfig?.skills,
             sourceReplyDeliveryMode,
+            suppressTyping: isRoomEvent ? true : undefined,
             disableBlockStreaming: sourceRepliesAreToolOnly
               ? true
               : (draftPreview.disableBlockStreamingForDraft ??
@@ -799,6 +817,9 @@ export async function processDiscordMessage(
       return;
     }
     dispatchResult = preparedResult.dispatchResult;
+    if (isRoomEvent && hasVisibleInboundReplyDispatch(dispatchResult)) {
+      clearGroupHistory();
+    }
     if (isProcessAborted(abortSignal)) {
       dispatchAborted = true;
       return;

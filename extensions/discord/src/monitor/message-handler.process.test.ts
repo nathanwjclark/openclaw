@@ -145,6 +145,7 @@ type DispatchInboundParams = {
     onCompactionEnd?: () => Promise<void> | void;
     onPartialReply?: (payload: { text?: string }) => Promise<void> | void;
     onAssistantMessageStart?: () => Promise<void> | void;
+    suppressTyping?: boolean;
   };
 };
 const dispatchInboundMessage = vi.hoisted(() =>
@@ -398,6 +399,7 @@ function getLastDispatchCtx():
       MediaTranscribedIndexes?: number[];
       MessageSid?: string;
       MessageSidFull?: string;
+      InboundTurnKind?: string;
       MessageThreadId?: string | number;
       ModelParentSessionKey?: string;
       OriginatingTo?: string;
@@ -421,6 +423,7 @@ function getLastDispatchCtx():
           MediaTranscribedIndexes?: number[];
           MessageSid?: string;
           MessageSidFull?: string;
+          InboundTurnKind?: string;
           MessageThreadId?: string | number;
           ModelParentSessionKey?: string;
           OriginatingTo?: string;
@@ -1227,6 +1230,120 @@ describe("processDiscordMessage session routing", () => {
       disableBlockStreaming: true,
     });
     expect(createDiscordDraftStream).not.toHaveBeenCalled();
+  });
+
+  it("submits configured ambient Discord guild chatter as quiet room events", async () => {
+    const ctx = await createBaseContext({
+      shouldRequireMention: false,
+      effectiveWasMentioned: false,
+      discordConfig: { streaming: "partial", blockStreaming: true },
+      cfg: {
+        messages: {
+          groupChat: {
+            ambientTurns: "room_event",
+            visibleReplies: "automatic",
+          },
+        },
+        session: { store: "/tmp/openclaw-discord-process-test-sessions.json" },
+      },
+      route: BASE_CHANNEL_ROUTE,
+    });
+
+    await runProcessDiscordMessage(ctx);
+
+    expect(getLastDispatchCtx()?.InboundTurnKind).toBe("room_event");
+    expectRecordFields(requireRecord(getLastDispatchReplyOptions(), "dispatch reply options"), {
+      sourceReplyDeliveryMode: "message_tool_only",
+      disableBlockStreaming: true,
+      suppressTyping: true,
+    });
+    expect(createDiscordDraftStream).not.toHaveBeenCalled();
+  });
+
+  it("keeps mentioned Discord guild turns as user requests", async () => {
+    const ctx = await createBaseContext({
+      shouldRequireMention: false,
+      effectiveWasMentioned: true,
+      cfg: {
+        messages: {
+          groupChat: {
+            ambientTurns: "room_event",
+          },
+        },
+        session: { store: "/tmp/openclaw-discord-process-test-sessions.json" },
+      },
+      route: BASE_CHANNEL_ROUTE,
+    });
+
+    await runProcessDiscordMessage(ctx);
+
+    expect(getLastDispatchCtx()?.InboundTurnKind).toBe("user_request");
+    expect(getLastDispatchReplyOptions()?.suppressTyping).toBeUndefined();
+  });
+
+  it("records Discord room events as pending group context", async () => {
+    const guildHistories = new Map();
+    const ctx = await createBaseContext({
+      shouldRequireMention: false,
+      effectiveWasMentioned: false,
+      guildHistories,
+      historyLimit: 10,
+      historyEntry: {
+        sender: "Alice",
+        body: "ambient note",
+        timestamp: 123,
+        messageId: "m1",
+      },
+      cfg: {
+        messages: {
+          groupChat: {
+            ambientTurns: "room_event",
+          },
+        },
+        session: { store: "/tmp/openclaw-discord-process-test-sessions.json" },
+      },
+      route: BASE_CHANNEL_ROUTE,
+    });
+
+    await runProcessDiscordMessage(ctx);
+
+    expect(guildHistories.get("c1")).toEqual([
+      {
+        sender: "Alice",
+        body: "ambient note",
+        timestamp: 123,
+        messageId: "m1",
+      },
+    ]);
+  });
+
+  it("keeps Discord room events quiet across ack and status reactions", async () => {
+    const ctx = await createBaseContext({
+      shouldRequireMention: false,
+      effectiveWasMentioned: false,
+      ackReactionScope: "all",
+      cfg: {
+        messages: {
+          ackReaction: "👀",
+          ackReactionScope: "all",
+          statusReactions: {
+            enabled: true,
+            timing: { debounceMs: 0 },
+          },
+          groupChat: {
+            ambientTurns: "room_event",
+          },
+        },
+        session: { store: "/tmp/openclaw-discord-process-test-sessions.json" },
+      },
+      route: BASE_CHANNEL_ROUTE,
+    });
+
+    await runProcessDiscordMessage(ctx);
+
+    expect(getLastDispatchCtx()?.InboundTurnKind).toBe("room_event");
+    expect(getReactionEmojis()).toEqual([]);
+    expect(sendMocks.removeReactionDiscord).not.toHaveBeenCalled();
   });
 
   it("sends the configured ack while suppressing automatic status reactions for always-on guild replies", async () => {
