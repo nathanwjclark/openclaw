@@ -7,6 +7,7 @@ import {
   toInboundMediaFacts,
 } from "openclaw/plugin-sdk/channel-inbound";
 import { hasControlCommand } from "openclaw/plugin-sdk/command-detection";
+import { isAbortRequestText } from "openclaw/plugin-sdk/command-primitives-runtime";
 import { shouldHandleTextCommands } from "openclaw/plugin-sdk/command-surface";
 import { isDangerousNameMatchingEnabled } from "openclaw/plugin-sdk/dangerous-name-runtime";
 import { recordDroppedChannelTurnHistory } from "openclaw/plugin-sdk/inbound-reply-dispatch";
@@ -596,6 +597,7 @@ export async function preflightDiscordMessage(
     surface: "discord",
   });
   const hasControlCommandInMessage = hasControlCommand(baseText, params.cfg);
+  const hasAbortRequest = isAbortRequestText(baseText);
 
   if (!isDirectMessage) {
     const commandAccess = await resolveDiscordTextCommandAccess({
@@ -801,6 +803,7 @@ export async function preflightDiscordMessage(
     effectiveWasMentioned,
     canDetectMention,
     hasControlCommand: hasControlCommandInMessage,
+    hasAbortRequest,
     historyEntry,
     botLoopProtection,
   });

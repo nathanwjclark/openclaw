@@ -1281,6 +1281,30 @@ describe("processDiscordMessage session routing", () => {
     expect(getLastDispatchReplyOptions()?.suppressTyping).toBeUndefined();
   });
 
+  it("keeps Discord abort requests as user requests in ambient guilds", async () => {
+    const ctx = await createBaseContext({
+      shouldRequireMention: false,
+      effectiveWasMentioned: false,
+      hasAbortRequest: true,
+      baseText: "stop",
+      messageText: "stop",
+      cfg: {
+        messages: {
+          groupChat: {
+            ambientTurns: "room_event",
+          },
+        },
+        session: { store: "/tmp/openclaw-discord-process-test-sessions.json" },
+      },
+      route: BASE_CHANNEL_ROUTE,
+    });
+
+    await runProcessDiscordMessage(ctx);
+
+    expect(getLastDispatchCtx()?.InboundTurnKind).toBe("user_request");
+    expect(getLastDispatchReplyOptions()?.suppressTyping).toBeUndefined();
+  });
+
   it("records Discord room events as pending group context", async () => {
     const guildHistories = new Map();
     const ctx = await createBaseContext({

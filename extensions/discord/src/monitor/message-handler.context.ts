@@ -335,6 +335,7 @@ export async function buildDiscordMessageProcessContext(params: {
       isGroup: isGuildMessage,
       wasMentioned: ctx.effectiveWasMentioned,
       hasControlCommand: ctx.hasControlCommand,
+      hasAbortRequest: ctx.hasAbortRequest,
     },
   });
 
