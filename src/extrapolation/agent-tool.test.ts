@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createExtrapolationTool } from "./agent-tool.js";
+import { promoteBackwardNodeIfReinforced } from "./durable-facts.js";
 import { addNode, createGraph, getGraph, getNodesForGraph } from "./registry.js";
 import { closeExtrapolationStore } from "./store.sqlite.js";
 
@@ -194,5 +195,80 @@ describe("extrapolation agent tool", () => {
     const params = callGateway.mock.calls[0][0].params;
     expect(params.model).toBe("gpt-5");
     expect(params.provider).toBe("openai");
+  });
+
+  it("injects durable facts into the seed prompt when memory config is enabled", async () => {
+    const ownerKey = "owner-mem";
+    const sessionKey = `session-mem-${Math.random().toString(36).slice(2, 8)}`;
+    // Pre-seed two graphs in the same session so the canonical content has cross-graph reinforcement.
+    for (let i = 0; i < 2; i += 1) {
+      const g = createGraph({ rootRequest: "prior", ownerKey, sessionKey, agentId: "agent-test" });
+      addNode({
+        graphId: g.graphId,
+        direction: "backward",
+        kind: "purpose",
+        content: "Ship renewals dashboard",
+        confidence: 0.9,
+        relevance: 0.7,
+      });
+    }
+    const fact = promoteBackwardNodeIfReinforced({
+      ownerKey,
+      sessionKey,
+      kind: "purpose",
+      content: "Ship renewals dashboard",
+      sourceGraphId: "external-trigger",
+      threshold: 2,
+    });
+    expect(fact).toBeDefined();
+
+    const callGateway = vi.fn().mockResolvedValue({ result: { payloads: [{ text: SEED_JSON }] } });
+    const tool = createExtrapolationTool({
+      agentId: "agent-test",
+      ownerKey,
+      sessionKey,
+      callGateway,
+      config: { extrapolation: { enabled: true } },
+    });
+    await run(tool, { action: "seed", request: "advance the renewals push" });
+    const userPrompt = callGateway.mock.calls[0][0].params.message as string;
+    expect(userPrompt).toContain("Established context");
+    expect(userPrompt).toContain("ship renewals dashboard");
+  });
+
+  it("skips durable-fact injection when the master switch is off", async () => {
+    const ownerKey = "owner-mem-off";
+    const sessionKey = `session-mem-off-${Math.random().toString(36).slice(2, 8)}`;
+    for (let i = 0; i < 2; i += 1) {
+      const g = createGraph({ rootRequest: "prior", ownerKey, sessionKey, agentId: "agent-test" });
+      addNode({
+        graphId: g.graphId,
+        direction: "backward",
+        kind: "purpose",
+        content: "Ship renewals dashboard",
+        confidence: 0.9,
+        relevance: 0.7,
+      });
+    }
+    promoteBackwardNodeIfReinforced({
+      ownerKey,
+      sessionKey,
+      kind: "purpose",
+      content: "Ship renewals dashboard",
+      sourceGraphId: "external-trigger",
+      threshold: 2,
+    });
+
+    const callGateway = vi.fn().mockResolvedValue({ result: { payloads: [{ text: SEED_JSON }] } });
+    const tool = createExtrapolationTool({
+      agentId: "agent-test",
+      ownerKey,
+      sessionKey,
+      callGateway,
+      // No config => master switch defaults off
+    });
+    await run(tool, { action: "seed", request: "advance the renewals push" });
+    const userPrompt = callGateway.mock.calls[0][0].params.message as string;
+    expect(userPrompt).not.toContain("Established context");
   });
 });

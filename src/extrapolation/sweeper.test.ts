@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { bumpGraphIteration, createGraph, getGraph, transitionGraph } from "./registry.js";
+import { getDurableFactsForSession } from "./durable-facts.js";
+import { addNode, bumpGraphIteration, createGraph, getGraph, transitionGraph } from "./registry.js";
 import { closeExtrapolationStore } from "./store.sqlite.js";
 import {
   DEFAULT_SWEEPER_MAX_ITERATIONS,
@@ -133,6 +134,117 @@ describe("sweepExtrapolation", () => {
     });
     expect(outcome.abandonedIterationCap).toContain(graph.graphId);
     expect(outcome.abandonedOrphaned).not.toContain(graph.graphId);
+  });
+
+  it("does not backfill durable facts when memory config is omitted", () => {
+    const sharedOwner = `owner-${Math.random().toString(36).slice(2, 8)}`;
+    const sharedSession = `session-${Math.random().toString(36).slice(2, 8)}`;
+    const g1 = createGraph({
+      rootRequest: "r",
+      ownerKey: sharedOwner,
+      sessionKey: sharedSession,
+      agentId: "a",
+    });
+    const g2 = createGraph({
+      rootRequest: "r",
+      ownerKey: sharedOwner,
+      sessionKey: sharedSession,
+      agentId: "a",
+    });
+    const g3 = createGraph({
+      rootRequest: "r",
+      ownerKey: sharedOwner,
+      sessionKey: sharedSession,
+      agentId: "a",
+    });
+    for (const g of [g1, g2, g3]) {
+      addNode({
+        graphId: g.graphId,
+        direction: "backward",
+        kind: "purpose",
+        content: "Backfill candidate",
+        confidence: 0.9,
+        relevance: 0.7,
+      });
+    }
+    const outcome = sweepExtrapolation({ sessionExists: () => true });
+    expect(outcome.factsBackfilledCount).toBe(0);
+    expect(getDurableFactsForSession({ ownerKey: sharedOwner, sessionKey: sharedSession })).toEqual(
+      [],
+    );
+  });
+
+  it("backfills durable facts for active graphs when memory config enables it", () => {
+    const sharedOwner = `owner-${Math.random().toString(36).slice(2, 8)}`;
+    const sharedSession = `session-${Math.random().toString(36).slice(2, 8)}`;
+    const g1 = createGraph({
+      rootRequest: "r",
+      ownerKey: sharedOwner,
+      sessionKey: sharedSession,
+      agentId: "a",
+    });
+    const g2 = createGraph({
+      rootRequest: "r",
+      ownerKey: sharedOwner,
+      sessionKey: sharedSession,
+      agentId: "a",
+    });
+    const g3 = createGraph({
+      rootRequest: "r",
+      ownerKey: sharedOwner,
+      sessionKey: sharedSession,
+      agentId: "a",
+    });
+    for (const g of [g1, g2, g3]) {
+      addNode({
+        graphId: g.graphId,
+        direction: "backward",
+        kind: "purpose",
+        content: "Backfill candidate",
+        confidence: 0.9,
+        relevance: 0.7,
+      });
+    }
+    const outcome = sweepExtrapolation({
+      sessionExists: () => true,
+      memory: { enabled: true, injectIntoSeed: true, threshold: 3, confidenceFloor: 0.7 },
+    });
+    expect(outcome.factsBackfilledCount).toBeGreaterThan(0);
+    const facts = getDurableFactsForSession({ ownerKey: sharedOwner, sessionKey: sharedSession });
+    expect(facts).toEqual([{ kind: "purpose", content: "backfill candidate" }]);
+  });
+
+  it("does not double-count facts when run twice in a row", () => {
+    const sharedOwner = `owner-${Math.random().toString(36).slice(2, 8)}`;
+    const sharedSession = `session-${Math.random().toString(36).slice(2, 8)}`;
+    const g1 = createGraph({
+      rootRequest: "r",
+      ownerKey: sharedOwner,
+      sessionKey: sharedSession,
+      agentId: "a",
+    });
+    const g2 = createGraph({
+      rootRequest: "r",
+      ownerKey: sharedOwner,
+      sessionKey: sharedSession,
+      agentId: "a",
+    });
+    for (const g of [g1, g2]) {
+      addNode({
+        graphId: g.graphId,
+        direction: "backward",
+        kind: "purpose",
+        content: "Repeatable backfill",
+        confidence: 0.9,
+        relevance: 0.7,
+      });
+    }
+    const memory = { enabled: true, injectIntoSeed: true, threshold: 2, confidenceFloor: 0.7 };
+    sweepExtrapolation({ sessionExists: () => true, memory });
+    sweepExtrapolation({ sessionExists: () => true, memory });
+    expect(
+      getDurableFactsForSession({ ownerKey: sharedOwner, sessionKey: sharedSession }),
+    ).toHaveLength(1);
   });
 
   it("ignores already-abandoned graphs", () => {

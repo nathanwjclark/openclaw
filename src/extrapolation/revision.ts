@@ -1,4 +1,5 @@
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { type ResolvedMemoryConfig, tryPromoteBackwardNode } from "./durable-facts.js";
 import {
   ExtrapolationConcurrencyError,
   addNode,
@@ -9,7 +10,11 @@ import {
 } from "./registry.js";
 import type { RevisionDelta, RevisionInvocation } from "./revision.runtime.js";
 import type { CallGatewayFn } from "./seed.runtime.js";
-import type { ExtrapolationGraphRecord, ExtrapolationNodeRecord } from "./types.js";
+import {
+  directionForKind,
+  type ExtrapolationGraphRecord,
+  type ExtrapolationNodeRecord,
+} from "./types.js";
 
 const log = createSubsystemLogger("extrapolation");
 
@@ -43,6 +48,8 @@ export type ScheduleRevisionInput = {
   fireHeartbeatWake?: HeartbeatWakeFireFn;
   /** Per-call model timeout (forwarded to runRevision). */
   modelTimeoutMs?: number;
+  /** Resolved memory config; when omitted, durable-fact promotion is skipped. */
+  memory?: ResolvedMemoryConfig;
 };
 
 export type ScheduleRevisionOutcome = {
@@ -142,6 +149,7 @@ function applyDelta(
   graph: ExtrapolationGraphRecord,
   delta: RevisionDelta,
   now: number,
+  memory?: ResolvedMemoryConfig,
 ): { added: number; resolved: number; invalidated: number } {
   let added = 0;
   let resolved = 0;
@@ -186,6 +194,17 @@ function applyDelta(
         now,
       });
       added += 1;
+      if (memory && directionForKind(seed.kind) === "backward") {
+        tryPromoteBackwardNode({
+          ownerKey: graph.ownerKey,
+          sessionKey: graph.sessionKey,
+          kind: seed.kind,
+          content: seed.content,
+          sourceGraphId: graph.graphId,
+          memory,
+          now,
+        });
+      }
     } catch (err) {
       log.warn("revision.apply_added_failed", {
         event: "revision.apply_added_failed",
@@ -289,7 +308,7 @@ export async function scheduleRevision(
   let counts = { added: 0, resolved: 0, invalidated: 0 };
   let bumped: ExtrapolationGraphRecord | undefined;
   if (delta) {
-    counts = applyDelta(graph, delta, at);
+    counts = applyDelta(graph, delta, at, input.memory);
     const material = counts.added + counts.resolved + counts.invalidated > 0;
     if (material) {
       try {
