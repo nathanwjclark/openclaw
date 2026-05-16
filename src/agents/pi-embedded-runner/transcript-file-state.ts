@@ -24,8 +24,113 @@ type SessionInfoEntry = Extract<SessionEntry, { type: "session_info" }>;
 type SessionMessageEntry = Extract<SessionEntry, { type: "message" }>;
 type ThinkingLevelChangeEntry = Extract<SessionEntry, { type: "thinking_level_change" }>;
 
+const sessionEntryTypes = new Set<string>([
+  "branch_summary",
+  "compaction",
+  "custom",
+  "custom_message",
+  "label",
+  "message",
+  "model_change",
+  "session_info",
+  "thinking_level_change",
+] satisfies SessionEntry["type"][]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function hasSessionEntryBase(entry: FileEntry): boolean {
+  const candidate = entry as {
+    id?: unknown;
+    parentId?: unknown;
+    timestamp?: unknown;
+  };
+  return (
+    isString(candidate.id) &&
+    (candidate.parentId === null || isString(candidate.parentId)) &&
+    isString(candidate.timestamp)
+  );
+}
+
 function isSessionEntry(entry: FileEntry): entry is SessionEntry {
-  return entry.type !== "session";
+  if (
+    entry.type === "session" ||
+    !sessionEntryTypes.has(entry.type) ||
+    !hasSessionEntryBase(entry)
+  ) {
+    return false;
+  }
+  switch (entry.type) {
+    case "branch_summary": {
+      const candidate = entry as { fromId?: unknown; summary?: unknown };
+      return isString(candidate.fromId) && isString(candidate.summary);
+    }
+    case "compaction": {
+      const candidate = entry as {
+        firstKeptEntryId?: unknown;
+        summary?: unknown;
+        tokensBefore?: unknown;
+      };
+      return (
+        isString(candidate.firstKeptEntryId) &&
+        isString(candidate.summary) &&
+        typeof candidate.tokensBefore === "number"
+      );
+    }
+    case "custom":
+      return isString((entry as { customType?: unknown }).customType);
+    case "custom_message": {
+      const candidate = entry as {
+        content?: unknown;
+        customType?: unknown;
+        display?: unknown;
+      };
+      return (
+        isString(candidate.customType) &&
+        (isString(candidate.content) || Array.isArray(candidate.content)) &&
+        typeof candidate.display === "boolean"
+      );
+    }
+    case "label":
+      return isString((entry as { targetId?: unknown }).targetId);
+    case "message": {
+      const message = (entry as { message?: unknown }).message;
+      return isRecord(message) && isString(message.role);
+    }
+    case "model_change": {
+      const candidate = entry as { modelId?: unknown; provider?: unknown };
+      return isString(candidate.provider) && isString(candidate.modelId);
+    }
+    case "session_info": {
+      const candidate = entry as { name?: unknown };
+      return candidate.name === undefined || typeof candidate.name === "string";
+    }
+    case "thinking_level_change":
+      return isString((entry as { thinkingLevel?: unknown }).thinkingLevel);
+  }
+  return false;
+}
+
+function readableSessionEntries(fileEntries: FileEntry[]): SessionEntry[] {
+  const entries: SessionEntry[] = [];
+  const reachableIds = new Set<string>();
+  for (const entry of fileEntries) {
+    if (
+      !isSessionEntry(entry) ||
+      reachableIds.has(entry.id) ||
+      (entry.parentId !== null && !reachableIds.has(entry.parentId))
+    ) {
+      continue;
+    }
+    entries.push(entry);
+    reachableIds.add(entry.id);
+  }
+  return entries;
 }
 
 function sessionHeaderVersion(header: SessionHeader | null): number {
@@ -288,7 +393,7 @@ export async function readTranscriptFileState(sessionFile: string): Promise<Tran
   migrateSessionEntries(fileEntries);
   const header =
     fileEntries.find((entry): entry is SessionHeader => entry.type === "session") ?? null;
-  const entries = fileEntries.filter(isSessionEntry);
+  const entries = readableSessionEntries(fileEntries);
   return new TranscriptFileState({ header, entries, migrated });
 }
 
