@@ -1274,6 +1274,22 @@ describe("processDiscordMessage session routing", () => {
     expect(createDiscordDraftStream).not.toHaveBeenCalled();
   });
 
+  it("keeps ambient Discord guild chatter as user requests without the room-event opt-in", async () => {
+    const ctx = await createAutomaticSourceDeliveryContext({
+      shouldRequireMention: false,
+      effectiveWasMentioned: false,
+      route: BASE_CHANNEL_ROUTE,
+    });
+
+    await runProcessDiscordMessage(ctx);
+
+    expect(getLastDispatchCtx()?.InboundTurnKind).toBe("user_request");
+    expectRecordFields(requireRecord(getLastDispatchReplyOptions(), "dispatch reply options"), {
+      sourceReplyDeliveryMode: "automatic",
+    });
+    expect(getLastDispatchReplyOptions()?.suppressTyping).toBeUndefined();
+  });
+
   it("keeps mentioned Discord guild turns as user requests", async () => {
     const ctx = await createBaseContext({
       shouldRequireMention: false,
