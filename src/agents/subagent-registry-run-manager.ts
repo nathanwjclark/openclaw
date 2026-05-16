@@ -100,6 +100,9 @@ export type RegisterSubagentRunParams = {
   attachmentsDir?: string;
   attachmentsRootDir?: string;
   retainAttachmentsOnKeep?: boolean;
+  /** Source extrapolation node that promoted this subagent run, if any. */
+  extrapolationGraphId?: string;
+  extrapolationNodeId?: string;
 };
 
 export function createSubagentRunManager(params: {
@@ -466,6 +469,12 @@ export function createSubagentRunManager(params: {
           registerParams.expectsCompletionMessage === false ? "not_applicable" : "pending",
         startedAt: now,
         lastEventAt: now,
+        ...(registerParams.extrapolationGraphId
+          ? { extrapolationGraphId: registerParams.extrapolationGraphId }
+          : {}),
+        ...(registerParams.extrapolationNodeId
+          ? { extrapolationNodeId: registerParams.extrapolationNodeId }
+          : {}),
       });
     } catch (error) {
       log.warn("Failed to create background task for subagent run", {
