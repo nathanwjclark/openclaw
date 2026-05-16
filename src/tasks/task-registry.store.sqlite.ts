@@ -36,6 +36,8 @@ type TaskRegistryRow = {
   progress_summary: string | null;
   terminal_summary: string | null;
   terminal_outcome: TaskRecord["terminalOutcome"] | null;
+  extrapolation_graph_id: string | null;
+  extrapolation_node_id: string | null;
 };
 
 type TaskDeliveryStateRow = {
@@ -144,6 +146,8 @@ function rowToTaskRecord(row: TaskRegistryRow): TaskRecord {
     ...(row.progress_summary ? { progressSummary: row.progress_summary } : {}),
     ...(row.terminal_summary ? { terminalSummary: row.terminal_summary } : {}),
     ...(row.terminal_outcome ? { terminalOutcome: row.terminal_outcome } : {}),
+    ...(row.extrapolation_graph_id ? { extrapolationGraphId: row.extrapolation_graph_id } : {}),
+    ...(row.extrapolation_node_id ? { extrapolationNodeId: row.extrapolation_node_id } : {}),
   };
 }
 
@@ -185,6 +189,8 @@ function bindTaskRecordBase(record: TaskRecord) {
     progress_summary: record.progressSummary ?? null,
     terminal_summary: record.terminalSummary ?? null,
     terminal_outcome: record.terminalOutcome ?? null,
+    extrapolation_graph_id: record.extrapolationGraphId ?? null,
+    extrapolation_node_id: record.extrapolationNodeId ?? null,
   };
 }
 
@@ -225,7 +231,9 @@ function createStatements(db: DatabaseSync): TaskRegistryStatements {
         error,
         progress_summary,
         terminal_summary,
-        terminal_outcome
+        terminal_outcome,
+        extrapolation_graph_id,
+        extrapolation_node_id
       FROM task_runs
       ORDER BY created_at ASC, task_id ASC
     `),
@@ -264,7 +272,9 @@ function createStatements(db: DatabaseSync): TaskRegistryStatements {
         error,
         progress_summary,
         terminal_summary,
-        terminal_outcome
+        terminal_outcome,
+        extrapolation_graph_id,
+        extrapolation_node_id
       ) VALUES (
         @task_id,
         @runtime,
@@ -291,7 +301,9 @@ function createStatements(db: DatabaseSync): TaskRegistryStatements {
         @error,
         @progress_summary,
         @terminal_summary,
-        @terminal_outcome
+        @terminal_outcome,
+        @extrapolation_graph_id,
+        @extrapolation_node_id
       )
       ON CONFLICT(task_id) DO UPDATE SET
         runtime = excluded.runtime,
@@ -318,7 +330,9 @@ function createStatements(db: DatabaseSync): TaskRegistryStatements {
         error = excluded.error,
         progress_summary = excluded.progress_summary,
         terminal_summary = excluded.terminal_summary,
-        terminal_outcome = excluded.terminal_outcome
+        terminal_outcome = excluded.terminal_outcome,
+        extrapolation_graph_id = excluded.extrapolation_graph_id,
+        extrapolation_node_id = excluded.extrapolation_node_id
     `),
     replaceDeliveryState: db.prepare(`
       INSERT OR REPLACE INTO task_delivery_state (
@@ -413,7 +427,9 @@ function ensureSchema(db: DatabaseSync) {
       error TEXT,
       progress_summary TEXT,
       terminal_summary TEXT,
-      terminal_outcome TEXT
+      terminal_outcome TEXT,
+      extrapolation_graph_id TEXT,
+      extrapolation_node_id TEXT
     );
   `);
   migrateLegacyOwnerColumns(db);
@@ -422,6 +438,12 @@ function ensureSchema(db: DatabaseSync) {
   }
   if (!hasTaskRunsColumn(db, "parent_flow_id")) {
     db.exec(`ALTER TABLE task_runs ADD COLUMN parent_flow_id TEXT;`);
+  }
+  if (!hasTaskRunsColumn(db, "extrapolation_graph_id")) {
+    db.exec(`ALTER TABLE task_runs ADD COLUMN extrapolation_graph_id TEXT;`);
+  }
+  if (!hasTaskRunsColumn(db, "extrapolation_node_id")) {
+    db.exec(`ALTER TABLE task_runs ADD COLUMN extrapolation_node_id TEXT;`);
   }
   db.exec(`
     CREATE TABLE IF NOT EXISTS task_delivery_state (
@@ -439,6 +461,9 @@ function ensureSchema(db: DatabaseSync) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_parent_flow_id ON task_runs(parent_flow_id);`);
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_task_runs_child_session_key ON task_runs(child_session_key);`,
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_task_runs_extrapolation_graph_id ON task_runs(extrapolation_graph_id);`,
   );
 }
 

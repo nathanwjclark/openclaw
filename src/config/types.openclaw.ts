@@ -11,6 +11,7 @@ import type { CliConfig } from "./types.cli.js";
 import type { CommitmentsConfig } from "./types.commitments.js";
 import type { CrestodianConfig } from "./types.crestodian.js";
 import type { CronConfig } from "./types.cron.js";
+import type { ExtrapolationConfig } from "./types.extrapolation.js";
 import type { DiscoveryConfig, GatewayConfig, TalkConfig } from "./types.gateway.js";
 import type { HooksConfig } from "./types.hooks.js";
 import type { McpConfig } from "./types.mcp.js";
@@ -123,6 +124,8 @@ export type OpenClawConfig = {
   web?: WebConfig;
   channels?: ChannelsConfig;
   cron?: CronConfig;
+  /** Structured-reasoning substrate for complex requests. Default disabled. */
+  extrapolation?: ExtrapolationConfig;
   commitments?: CommitmentsConfig;
   hooks?: HooksConfig;
   discovery?: DiscoveryConfig;
