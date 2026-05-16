@@ -427,17 +427,19 @@ export async function processDiscordMessage(
       limit: historyLimit,
     });
   };
-  const endDiscordInboundTurnDeliveryCorrelation = isRoomEvent
-    ? beginDiscordInboundTurnDeliveryCorrelation(
-        ctxPayload.SessionKey,
-        {
-          outboundTo: messageChannelId,
-          outboundAccountId: route.accountId,
-          markInboundTurnDelivered: clearGroupHistory,
-        },
-        { inboundTurnKind: ctxPayload.InboundTurnKind },
-      )
-    : () => {};
+  const beginDeliveryCorrelation = () =>
+    isRoomEvent
+      ? beginDiscordInboundTurnDeliveryCorrelation(
+          ctxPayload.SessionKey,
+          {
+            outboundTo: messageChannelId,
+            outboundAccountId: route.accountId,
+            markInboundTurnDelivered: clearGroupHistory,
+          },
+          { inboundTurnKind: ctxPayload.InboundTurnKind },
+        )
+      : () => {};
+  const endDiscordInboundTurnDeliveryCorrelation = beginDeliveryCorrelation();
 
   const deliverChannelId = deliverTarget.startsWith("channel:")
     ? deliverTarget.slice("channel:".length)
@@ -685,6 +687,9 @@ export async function processDiscordMessage(
             abortSignal,
             skillFilter: channelConfig?.skills,
             sourceReplyDeliveryMode,
+            queuedDeliveryCorrelations: isRoomEvent
+              ? [{ begin: beginDeliveryCorrelation }]
+              : undefined,
             suppressTyping: isRoomEvent ? true : undefined,
             disableBlockStreaming: sourceRepliesAreToolOnly
               ? true

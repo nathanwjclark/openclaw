@@ -157,6 +157,7 @@ type DispatchInboundParams = {
     onCompactionEnd?: () => Promise<void> | void;
     onPartialReply?: (payload: { text?: string }) => Promise<void> | void;
     onAssistantMessageStart?: () => Promise<void> | void;
+    queuedDeliveryCorrelations?: Array<{ begin: () => () => void }>;
     suppressTyping?: boolean;
   };
 };
@@ -1427,6 +1428,50 @@ describe("processDiscordMessage session routing", () => {
     });
 
     await runProcessDiscordMessage(ctx);
+
+    expect(guildHistories.get("c1")).toEqual([]);
+  });
+
+  it("keeps Discord room event delivery correlation for queued follow-ups", async () => {
+    const guildHistories = new Map();
+    const ctx = await createBaseContext({
+      shouldRequireMention: false,
+      effectiveWasMentioned: false,
+      guildHistories,
+      historyLimit: 10,
+      historyEntry: {
+        sender: "Alice",
+        body: "queued ambient note",
+        timestamp: 123,
+        messageId: "m1",
+      },
+      cfg: {
+        messages: {
+          groupChat: {
+            ambientTurns: "room_event",
+          },
+        },
+        session: { store: "/tmp/openclaw-discord-process-test-sessions.json" },
+      },
+      route: BASE_CHANNEL_ROUTE,
+    });
+
+    await runProcessDiscordMessage(ctx);
+
+    expect(guildHistories.get("c1")).toHaveLength(1);
+    const begin = getLastDispatchReplyOptions()?.queuedDeliveryCorrelations?.[0]?.begin;
+    expect(begin).toBeTypeOf("function");
+    const end = begin?.();
+    try {
+      notifyDiscordInboundTurnOutboundSuccess({
+        sessionKey: "agent:main:discord:guild:g1",
+        to: "channel:c1",
+        accountId: "default",
+        inboundTurnKind: "room_event",
+      });
+    } finally {
+      end?.();
+    }
 
     expect(guildHistories.get("c1")).toEqual([]);
   });
