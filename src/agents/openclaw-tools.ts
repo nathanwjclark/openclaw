@@ -1,7 +1,9 @@
 import type { SourceReplyDeliveryMode } from "../auto-reply/get-reply-options.types.js";
 import type { InboundTurnKind } from "../channels/turn/kind.js";
 import { selectApplicableRuntimeConfig } from "../config/config.js";
+import { resolveExtrapolationEnabled } from "../config/types.extrapolation.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { createExtrapolationTool } from "../extrapolation/agent-tool.js";
 import { callGateway } from "../gateway/call.js";
 import { isEmbeddedMode } from "../infra/embedded-mode.js";
 import {
@@ -429,6 +431,18 @@ export function createOpenClawTools(
     createSubagentsTool({
       agentSessionKey: options?.agentSessionKey,
     }),
+    ...(resolveExtrapolationEnabled(resolvedConfig?.extrapolation, sessionAgentId) &&
+    options?.agentSessionKey
+      ? [
+          createExtrapolationTool({
+            agentId: sessionAgentId,
+            ownerKey: options.agentSessionKey,
+            sessionKey: options.agentSessionKey,
+            config: resolvedConfig,
+            callGateway: effectiveCallGateway,
+          }),
+        ]
+      : []),
     createSessionStatusTool({
       agentSessionKey: options?.agentSessionKey,
       runSessionKey: options?.runSessionKey,
