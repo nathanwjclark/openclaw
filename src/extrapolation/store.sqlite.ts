@@ -89,6 +89,7 @@ type Statements = {
   insertFact: StatementSync;
   updateFact: StatementSync;
   selectFactsBySession: StatementSync;
+  selectFactsBySessionKey: StatementSync;
   selectFactByHash: StatementSync;
 };
 
@@ -315,6 +316,11 @@ function createStatements(db: DatabaseSync): Statements {
     selectFactsBySession: db.prepare(`
       SELECT * FROM session_durable_facts
       WHERE owner_key = ? AND session_key = ? AND revoked_at IS NULL
+      ORDER BY created_at ASC
+    `),
+    selectFactsBySessionKey: db.prepare(`
+      SELECT * FROM session_durable_facts
+      WHERE session_key = ? AND revoked_at IS NULL
       ORDER BY created_at ASC
     `),
     selectFactByHash: db.prepare(`
@@ -622,6 +628,11 @@ export function selectFactsBySession(
     ownerKey,
     sessionKey,
   ) as FactRow[];
+  return rows.map(rowToFact);
+}
+
+export function selectFactsBySessionKey(sessionKey: string): SessionDurableFactRecord[] {
+  const rows = openDatabase().statements.selectFactsBySessionKey.all(sessionKey) as FactRow[];
   return rows.map(rowToFact);
 }
 

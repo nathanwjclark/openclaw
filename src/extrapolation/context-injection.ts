@@ -1,5 +1,10 @@
 import { resolveExtrapolationEnabled } from "../config/types.extrapolation.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import {
+  type DurableFactForSeed,
+  getDurableFactsBySessionKey,
+  resolveMemoryConfig,
+} from "./durable-facts.js";
 import { getNodesForGraph, listGraphsForSession } from "./registry.js";
 import type { ExtrapolationGraphRecord, ExtrapolationNodeRecord } from "./types.js";
 
@@ -9,10 +14,12 @@ export type ContextInjectionInput = {
 };
 
 export type ContextInjectionResult = {
-  /** Rendered system-prompt block, empty string when no active graphs. */
+  /** Rendered system-prompt block, empty string when there's nothing to inject. */
   rendered: string;
   /** Number of active graphs included. */
   graphCount: number;
+  /** Number of durable facts included in the Established-context block. */
+  factCount: number;
 };
 
 const DEFAULT_GAP_RELEVANCE_THRESHOLD = 0.6;
@@ -113,21 +120,44 @@ function renderGraph(
   return lines.join("\n");
 }
 
+function renderEstablishedContext(facts: ReadonlyArray<DurableFactForSeed>): string {
+  const lines: string[] = ["## Established context (from prior sessions)"];
+  for (const fact of facts) {
+    lines.push(`- (${fact.kind.replace(/_/g, " ")}) ${fact.content}`);
+  }
+  return lines.join("\n");
+}
+
 export function renderExtrapolationContext(
   input: ContextInjectionInput,
   options: { config?: OpenClawConfig } = {},
 ): ContextInjectionResult {
   const graphs = listGraphsForSession(input.sessionKey).filter((g) => g.status === "active");
-  if (graphs.length === 0) {
-    return { rendered: "", graphCount: 0 };
+  const memory = resolveMemoryConfig(options.config);
+  const facts = memory.injectIntoSeed ? getDurableFactsBySessionKey(input.sessionKey) : [];
+
+  if (graphs.length === 0 && facts.length === 0) {
+    return { rendered: "", graphCount: 0, factCount: 0 };
   }
+
   const relevanceMin = relevanceFloor(options.config);
-  const blocks: string[] = ["## Active extrapolation graphs"];
-  for (const graph of graphs) {
-    const nodes = getNodesForGraph(graph.graphId).slice(0, graph.budgetNodes);
-    blocks.push("", renderGraph(graph, nodes, relevanceMin));
+  const sections: string[] = [];
+  if (facts.length > 0) {
+    sections.push(renderEstablishedContext(facts));
   }
-  return { rendered: blocks.join("\n"), graphCount: graphs.length };
+  if (graphs.length > 0) {
+    const graphLines: string[] = ["## Active extrapolation graphs"];
+    for (const graph of graphs) {
+      const nodes = getNodesForGraph(graph.graphId).slice(0, graph.budgetNodes);
+      graphLines.push("", renderGraph(graph, nodes, relevanceMin));
+    }
+    sections.push(graphLines.join("\n"));
+  }
+  return {
+    rendered: sections.join("\n\n"),
+    graphCount: graphs.length,
+    factCount: facts.length,
+  };
 }
 
 export type RunExtrapolationContextInput = {
@@ -142,10 +172,10 @@ export function renderExtrapolationContextForRun(
   const sessionKey = input.sessionKey?.trim();
   const agentId = input.agentId?.trim();
   if (!sessionKey || !agentId) {
-    return { rendered: "", graphCount: 0 };
+    return { rendered: "", graphCount: 0, factCount: 0 };
   }
   if (!resolveExtrapolationEnabled(input.config?.extrapolation, agentId)) {
-    return { rendered: "", graphCount: 0 };
+    return { rendered: "", graphCount: 0, factCount: 0 };
   }
   return renderExtrapolationContext({ sessionKey }, { config: input.config });
 }

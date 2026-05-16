@@ -6,6 +6,7 @@ import { createSubsystemLogger } from "../logging/subsystem.js";
 import {
   getDurableFactsForSession,
   resolveMemoryConfig,
+  revokeDurableFactByContent,
   tryPromoteBackwardNode,
 } from "./durable-facts.js";
 import {
@@ -35,6 +36,7 @@ ACTIONS:
 - update(node_id, patch): mark a node resolved/pruned/invalidated, set a resolution text, or adjust confidence/relevance. patch fields: status, resolution, confidence, relevance, promoted_task_id, promoted_child_session_key.
 - revise(graph_id, evidence): produce a new revision pass given new evidence. (Deferred to Phase 2b; calling this now returns a 'not implemented' error.)
 - close(graph_id, [reason]): mark a graph resolved or abandoned when the root request is satisfied or the plan is invalidated. status: resolved | abandoned.
+- revoke_fact(kind, content, [reason]): soft-delete a previously-established session fact (purpose / role_context / business_context / stakeholder) when it turns out to be wrong. Pass the kind and the fact's content as it appears in your "Established context" block. Reason is optional but recommended.
 
 USE THIS TOOL when the request is complex/strategic (multiple angles, requires understanding intent, depends on context you may not have). Skip for factoid lookups, direct commands, or requests with unambiguous purpose.`;
 
@@ -46,6 +48,7 @@ const ExtrapolationToolSchema = Type.Object({
     Type.Literal("update"),
     Type.Literal("revise"),
     Type.Literal("close"),
+    Type.Literal("revoke_fact"),
   ]),
   request: Type.Optional(Type.String()),
   budget_nodes: Type.Optional(Type.Number()),
@@ -74,6 +77,15 @@ const ExtrapolationToolSchema = Type.Object({
   evidence: Type.Optional(Type.Unknown()),
   status: Type.Optional(Type.Union([Type.Literal("resolved"), Type.Literal("abandoned")])),
   reason: Type.Optional(Type.String()),
+  kind: Type.Optional(
+    Type.Union([
+      Type.Literal("purpose"),
+      Type.Literal("role_context"),
+      Type.Literal("business_context"),
+      Type.Literal("stakeholder"),
+    ]),
+  ),
+  content: Type.Optional(Type.String()),
 });
 
 export type CreateExtrapolationToolOptions = {
@@ -257,6 +269,39 @@ function handleClose(params: Record<string, unknown>): unknown {
   return jsonResult({ status: "ok", graph: next });
 }
 
+const REVOKABLE_FACT_KINDS = new Set([
+  "purpose",
+  "role_context",
+  "business_context",
+  "stakeholder",
+]);
+
+function handleRevokeFact(
+  params: Record<string, unknown>,
+  opts: CreateExtrapolationToolOptions,
+): unknown {
+  const kind = readStringParam(params, "kind", { required: true });
+  if (!REVOKABLE_FACT_KINDS.has(kind)) {
+    throw new ToolInputError(
+      `extrapolation.revoke_fact: kind must be one of ${[...REVOKABLE_FACT_KINDS].join(", ")}`,
+    );
+  }
+  const content = readStringParam(params, "content", { required: true });
+  const reason = readStringParam(params, "reason");
+  const outcome = revokeDurableFactByContent({
+    sessionKey: opts.sessionKey,
+    kind: kind as Parameters<typeof revokeDurableFactByContent>[0]["kind"],
+    content,
+    ...(reason ? { reason } : {}),
+  });
+  return jsonResult({
+    status: outcome.revoked ? "ok" : outcome.reason,
+    ...(outcome.factId ? { fact_id: outcome.factId } : {}),
+    kind,
+    content,
+  });
+}
+
 function handleRevise(params: Record<string, unknown>): unknown {
   const graphId = readStringParam(params, "graph_id", { required: true });
   // Smoke-validate the graph exists so the agent gets a clear error early.
@@ -298,9 +343,11 @@ export function createExtrapolationTool(opts: CreateExtrapolationToolOptions): A
           return handleClose(params) as Awaited<ReturnType<AnyAgentTool["execute"]>>;
         case "revise":
           return handleRevise(params) as Awaited<ReturnType<AnyAgentTool["execute"]>>;
+        case "revoke_fact":
+          return handleRevokeFact(params, opts) as Awaited<ReturnType<AnyAgentTool["execute"]>>;
         default:
           throw new ToolInputError(
-            `extrapolation: unknown action "${action}". Use seed | update | close | revise.`,
+            `extrapolation: unknown action "${action}". Use seed | update | close | revise | revoke_fact.`,
           );
       }
     },

@@ -4,6 +4,7 @@ import {
   renderExtrapolationContext,
   renderExtrapolationContextForRun,
 } from "./context-injection.js";
+import { promoteBackwardNodeIfReinforced } from "./durable-facts.js";
 import { addNode, createGraph, transitionGraph, updateNode } from "./registry.js";
 import { closeExtrapolationStore } from "./store.sqlite.js";
 
@@ -189,6 +190,154 @@ describe("renderExtrapolationContextForRun", () => {
     });
     expect(result.rendered).toContain("visible gap");
     expect(result.graphCount).toBe(1);
+  });
+
+  it("renders durable facts as an Established context block when enabled and active graph exists", () => {
+    const ownerKey = "owner-mem-render";
+    const sessionKey = `session-mem-render-${Math.random().toString(36).slice(2, 8)}`;
+    // Pre-seed two graphs in the same session so the canonical content has cross-graph reinforcement.
+    for (let i = 0; i < 2; i += 1) {
+      const g = createGraph({
+        rootRequest: "prior",
+        ownerKey,
+        sessionKey,
+        agentId: "agent-mem",
+      });
+      addNode({
+        graphId: g.graphId,
+        direction: "backward",
+        kind: "purpose",
+        content: "Ship renewals dashboard",
+        confidence: 0.9,
+        relevance: 0.7,
+      });
+    }
+    promoteBackwardNodeIfReinforced({
+      ownerKey,
+      sessionKey,
+      kind: "purpose",
+      content: "Ship renewals dashboard",
+      sourceGraphId: "external",
+      threshold: 2,
+    });
+    // A third active graph so the existing graph block is non-empty.
+    const liveGraph = createGraph({
+      rootRequest: "current",
+      ownerKey,
+      sessionKey,
+      agentId: "agent-mem",
+    });
+    addNode({
+      graphId: liveGraph.graphId,
+      direction: "lateral",
+      kind: "gap",
+      content: "what is the launch date?",
+      relevance: 0.9,
+    });
+
+    const result = renderExtrapolationContextForRun({
+      sessionKey,
+      agentId: "agent-mem",
+      config: { extrapolation: { enabled: true } },
+    });
+    expect(result.rendered).toContain("Established context (from prior sessions)");
+    expect(result.rendered).toContain("ship renewals dashboard");
+    expect(result.rendered).toContain("what is the launch date?");
+    expect(result.factCount).toBe(1);
+  });
+
+  it("does not render durable facts when memory injection is disabled", () => {
+    const ownerKey = "owner-mem-off-render";
+    const sessionKey = `session-mem-off-render-${Math.random().toString(36).slice(2, 8)}`;
+    for (let i = 0; i < 2; i += 1) {
+      const g = createGraph({
+        rootRequest: "prior",
+        ownerKey,
+        sessionKey,
+        agentId: "agent-mem",
+      });
+      addNode({
+        graphId: g.graphId,
+        direction: "backward",
+        kind: "purpose",
+        content: "Suppressed fact",
+        confidence: 0.9,
+        relevance: 0.7,
+      });
+      transitionGraph({ graphId: g.graphId, to: "resolved", now: 2 });
+    }
+    promoteBackwardNodeIfReinforced({
+      ownerKey,
+      sessionKey,
+      kind: "purpose",
+      content: "Suppressed fact",
+      sourceGraphId: "external",
+      threshold: 2,
+    });
+    const liveGraph = createGraph({
+      rootRequest: "current",
+      ownerKey,
+      sessionKey,
+      agentId: "agent-mem",
+    });
+    addNode({
+      graphId: liveGraph.graphId,
+      direction: "lateral",
+      kind: "gap",
+      content: "later",
+      relevance: 0.9,
+    });
+
+    const result = renderExtrapolationContextForRun({
+      sessionKey,
+      agentId: "agent-mem",
+      config: {
+        extrapolation: { enabled: true, memory: { injectIntoSeed: false } },
+      },
+    });
+    expect(result.rendered).not.toContain("Established context");
+    expect(result.rendered).not.toContain("Suppressed fact");
+    expect(result.factCount).toBe(0);
+  });
+
+  it("renders facts even when no active graphs exist", () => {
+    const ownerKey = "owner-mem-noactive";
+    const sessionKey = `session-mem-noactive-${Math.random().toString(36).slice(2, 8)}`;
+    for (let i = 0; i < 2; i += 1) {
+      const g = createGraph({
+        rootRequest: "prior",
+        ownerKey,
+        sessionKey,
+        agentId: "agent-mem",
+      });
+      addNode({
+        graphId: g.graphId,
+        direction: "backward",
+        kind: "purpose",
+        content: "Long-standing purpose",
+        confidence: 0.9,
+        relevance: 0.7,
+      });
+      transitionGraph({ graphId: g.graphId, to: "resolved", now: 1 });
+    }
+    promoteBackwardNodeIfReinforced({
+      ownerKey,
+      sessionKey,
+      kind: "purpose",
+      content: "Long-standing purpose",
+      sourceGraphId: "external",
+      threshold: 2,
+    });
+
+    const result = renderExtrapolationContextForRun({
+      sessionKey,
+      agentId: "agent-mem",
+      config: { extrapolation: { enabled: true } },
+    });
+    expect(result.rendered).toContain("Established context");
+    expect(result.rendered).toContain("long-standing purpose");
+    expect(result.graphCount).toBe(0);
+    expect(result.factCount).toBe(1);
   });
 
   it("respects per-agent override on top of disabled master switch", () => {
