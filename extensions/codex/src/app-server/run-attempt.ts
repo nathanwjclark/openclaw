@@ -805,7 +805,7 @@ export async function runCodexAppServerAttempt(
   }
   const buildPromptFromCurrentInputs = () =>
     resolveAgentHarnessBeforePromptBuildResult({
-      prompt: prependCurrentTurnContext(promptText, params.currentTurnContext),
+      prompt: prependCurrentInboundContext(promptText, params.currentInboundContext),
       developerInstructions,
       messages: historyMessages,
       ctx: hookContext,
@@ -3604,9 +3604,9 @@ function joinPresentSections(...sections: Array<string | undefined>): string {
   return sections.filter((section): section is string => Boolean(section?.trim())).join("\n\n");
 }
 
-function prependCurrentTurnContext(
+function prependCurrentInboundContext(
   prompt: string,
-  context: EmbeddedRunAttemptParams["currentTurnContext"],
+  context: EmbeddedRunAttemptParams["currentInboundContext"],
 ): string {
   const text = context?.text.trim();
   return text ? [text, prompt].filter(Boolean).join("\n\n") : prompt;

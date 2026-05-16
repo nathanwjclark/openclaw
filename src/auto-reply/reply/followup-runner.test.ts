@@ -601,7 +601,7 @@ describe("createFollowupRunner runtime config", () => {
 
     await runner(
       createQueuedRun({
-        currentTurnKind: "room_event",
+        currentInboundEventKind: "room_event",
         abortSignal: abortController.signal,
         run: {
           provider: "openai",
@@ -631,7 +631,7 @@ describe("createFollowupRunner runtime config", () => {
 
     await runner(
       createQueuedRun({
-        currentTurnKind: "room_event",
+        currentInboundEventKind: "room_event",
         abortSignal: abortController.signal,
         run: {
           provider: "openai",
@@ -662,7 +662,7 @@ describe("createFollowupRunner runtime config", () => {
 
     await runner(
       createQueuedRun({
-        currentTurnKind: "room_event",
+        currentInboundEventKind: "room_event",
         deliveryCorrelations: [
           {
             begin: () => {

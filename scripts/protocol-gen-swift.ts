@@ -41,7 +41,7 @@ const STRICT_LITERAL_STRUCTS = new Set([
 ]);
 
 const DEFAULTED_OPTIONAL_INIT_PARAMS: Record<string, Set<string>> = {
-  MessageActionParams: new Set(["inboundTurnKind"]),
+  MessageActionParams: new Set(["inboundEventKind"]),
   CronRunLogEntry: new Set(["failureNotificationDelivery"]),
 };
 

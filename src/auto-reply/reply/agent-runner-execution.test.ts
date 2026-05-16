@@ -564,7 +564,7 @@ describe("runAgentTurnWithFallback", () => {
 
     const runAgentTurnWithFallback = await getRunAgentTurnWithFallback();
     const followupRun = createFollowupRun();
-    followupRun.currentTurnKind = "room_event";
+    followupRun.currentInboundEventKind = "room_event";
     followupRun.run.provider = "codex-cli";
     followupRun.run.model = "gpt-5.4";
 
@@ -580,7 +580,7 @@ describe("runAgentTurnWithFallback", () => {
 
     expect(result.kind).toBe("success");
     expectMockCallArgFields(state.runCliAgentMock, 0, "CLI run params", {
-      currentTurnKind: "room_event",
+      currentInboundEventKind: "room_event",
       cliSessionId: undefined,
       cliSessionBinding: undefined,
     });

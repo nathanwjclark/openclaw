@@ -51,6 +51,7 @@ Save to `~/.openclaw/openclaw.json` and you can DM the bot from that number.
   messages: {
     visibleReplies: "automatic",
     groupChat: {
+      unmentionedInbound: "room_event",
       visibleReplies: "message_tool", // default; use "automatic" for legacy room replies
     },
   },
@@ -110,6 +111,7 @@ Save to `~/.openclaw/openclaw.json` and you can DM the bot from that number.
     ackReactionScope: "group-mentions",
     groupChat: {
       historyLimit: 50,
+      unmentionedInbound: "room_event",
       visibleReplies: "message_tool", // normal final replies stay private in groups/channels
     },
     queue: {
