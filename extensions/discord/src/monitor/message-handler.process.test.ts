@@ -1394,6 +1394,66 @@ describe("processDiscordMessage session routing", () => {
     ]);
   });
 
+  it("records Discord room event media as pending group context", async () => {
+    const guildHistories = new Map();
+    const ctx = await createBaseContext({
+      shouldRequireMention: false,
+      effectiveWasMentioned: false,
+      guildHistories,
+      historyLimit: 10,
+      historyEntry: {
+        sender: "Alice",
+        body: "ambient image",
+        timestamp: 123,
+        messageId: "m1",
+      },
+      message: {
+        id: "m1",
+        channelId: "c1",
+        timestamp: new Date().toISOString(),
+        attachments: [
+          {
+            id: "a1",
+            filename: "note.png",
+            url: "https://cdn.discordapp.com/attachments/c1/m1/note.png",
+            content_type: "image/png",
+          },
+        ],
+      },
+      discordRestFetch: async () =>
+        new Response(new Uint8Array([1, 2, 3]), {
+          headers: { "content-type": "image/png" },
+        }),
+      cfg: {
+        messages: {
+          groupChat: {
+            ambientTurns: "room_event",
+          },
+        },
+        session: { store: "/tmp/openclaw-discord-process-test-sessions.json" },
+      },
+      route: BASE_CHANNEL_ROUTE,
+    });
+
+    await runProcessDiscordMessage(ctx);
+
+    expect(guildHistories.get("c1")).toEqual([
+      {
+        sender: "Alice",
+        body: "ambient image",
+        timestamp: 123,
+        messageId: "m1",
+        media: [
+          expect.objectContaining({
+            contentType: "image/png",
+            kind: "image",
+            messageId: "m1",
+          }),
+        ],
+      },
+    ]);
+  });
+
   it("clears Discord room event history after a visible message tool send", async () => {
     const guildHistories = new Map();
     const ctx = await createBaseContext({

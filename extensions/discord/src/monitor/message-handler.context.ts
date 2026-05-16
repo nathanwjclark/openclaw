@@ -3,6 +3,7 @@ import {
   formatInboundEnvelope,
   resolveAmbientGroupInboundTurnKind,
   resolveEnvelopeFormatOptions,
+  toHistoryMediaEntries,
   toInboundMediaFacts,
 } from "openclaw/plugin-sdk/channel-inbound";
 import { resolveChannelContextVisibilityMode } from "openclaw/plugin-sdk/context-visibility-runtime";
@@ -437,10 +438,12 @@ export async function buildDiscordMessageProcessContext(params: {
     },
   });
   if (inboundTurnKind === "room_event" && shouldIncludeChannelHistory && historyEntry) {
-    channelHistory.record({
+    await channelHistory.recordWithMedia({
       historyKey: messageChannelId,
       limit: historyLimit,
       entry: historyEntry,
+      media: toHistoryMediaEntries(mediaList, { messageId: message.id }),
+      messageId: message.id,
     });
   }
   const persistedSessionKey = ctxPayload.SessionKey ?? route.sessionKey;
