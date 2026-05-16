@@ -79,8 +79,12 @@ describe("runRevisionPass", () => {
     expect(args.method).toBe("agent");
     expect(args.params.modelRun).toBe(true);
     expect(args.params.promptMode).toBe("none");
-    expect(args.params.disableTools).toBe(true);
     expect(args.params.agentId).toBe("agent-1");
+    // Gateway rejects systemPrompt / disableTools. Format instructions are
+    // inlined into `message`; modelRun:true disables tools internally.
+    expect(args.params.systemPrompt).toBeUndefined();
+    expect(args.params.disableTools).toBeUndefined();
+    expect(args.params.message).toContain("revision pass");
   });
 
   it("strips markdown code fences before parsing", async () => {

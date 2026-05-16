@@ -71,7 +71,10 @@ Guidance:
 Return strictly valid JSON. No additional fields, no comments, no trailing commas.`;
 
 function buildUserPrompt(invocation: SeedInvocation, parseErrorHint?: string): string {
-  const lines: string[] = [];
+  // The gateway's agent method does not accept a systemPrompt param under the
+  // raw-model-run path (modelRun:true clears the runtime system prompt). So we
+  // inline the seed format instructions into the user message itself.
+  const lines: string[] = [SEED_SYSTEM_PROMPT, "", "---", ""];
   lines.push(`Root request:\n${invocation.rootRequest.trim()}`);
   if (invocation.durableFacts && invocation.durableFacts.length > 0) {
     lines.push("");
@@ -157,10 +160,8 @@ async function invokeSeedModel(
   const params: Record<string, unknown> = {
     agentId: invocation.agentId,
     message: userPrompt,
-    systemPrompt: SEED_SYSTEM_PROMPT,
     modelRun: true,
     promptMode: "none",
-    disableTools: true,
     idempotencyKey: randomIdempotencyKey(),
   };
   if (invocation.model) {

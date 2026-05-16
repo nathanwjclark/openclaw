@@ -84,7 +84,10 @@ function renderNodes(nodes: ReadonlyArray<ExtrapolationNodeRecord>): string {
 
 function buildUserPrompt(invocation: RevisionInvocation, parseErrorHint?: string): string {
   const { graph, nodes, evidence } = invocation;
-  const lines: string[] = [];
+  // The gateway's agent method does not accept a systemPrompt param under the
+  // raw-model-run path. Inline the revision format instructions into the user
+  // message itself.
+  const lines: string[] = [REVISION_SYSTEM_PROMPT, "", "---", ""];
   lines.push(`Root request:\n${graph.rootRequest}`);
   lines.push("");
   lines.push(`Graph state: iteration ${graph.iteration}, status ${graph.status}.`);
@@ -193,10 +196,8 @@ async function invokeRevisionModel(
   const params: Record<string, unknown> = {
     agentId: invocation.graph.agentId,
     message: userPrompt,
-    systemPrompt: REVISION_SYSTEM_PROMPT,
     modelRun: true,
     promptMode: "none",
-    disableTools: true,
     idempotencyKey: randomIdempotencyKey(),
   };
   if (invocation.model) {
