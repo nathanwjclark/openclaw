@@ -291,7 +291,7 @@ export const discordOutbound: ChannelOutboundAdapter = {
   afterDeliverPayload: async ({ target, payload }) => {
     notifyDiscordInboundTurnOutboundPayloadSuccess({
       payload,
-      to: target.to,
+      to: resolveDiscordOutboundTarget({ to: target.to, threadId: target.threadId }),
       accountId: target.accountId,
     });
     const threadId = normalizeOptionalStringifiedId(target.threadId);

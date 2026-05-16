@@ -498,6 +498,54 @@ describe("discordOutbound", () => {
     expect(markInboundTurnDelivered).toHaveBeenCalledTimes(1);
   });
 
+  it("matches room-event outbound delivery against threaded Discord targets", async () => {
+    const markParentDelivered = vi.fn();
+    const markThreadDelivered = vi.fn();
+    const endParent = beginDiscordInboundTurnDeliveryCorrelation(
+      "agent:main:discord:guild:g1",
+      {
+        outboundTo: "channel:parent-1",
+        outboundAccountId: "default",
+        markInboundTurnDelivered: markParentDelivered,
+      },
+      { inboundTurnKind: "room_event" },
+    );
+    const endThread = beginDiscordInboundTurnDeliveryCorrelation(
+      "agent:main:discord:guild:g1:thread:thread-1",
+      {
+        outboundTo: "channel:thread-1",
+        outboundAccountId: "default",
+        markInboundTurnDelivered: markThreadDelivered,
+      },
+      { inboundTurnKind: "room_event" },
+    );
+    try {
+      await discordOutbound.afterDeliverPayload?.({
+        cfg: {},
+        target: {
+          channel: "discord",
+          to: "channel:parent-1",
+          accountId: "default",
+          threadId: "thread-1",
+        },
+        payload: withDiscordInboundTurnDeliveryMetadata(
+          { text: "delivered" },
+          {
+            sessionKey: "agent:main:discord:guild:g1:thread:thread-1",
+            inboundTurnKind: "room_event",
+          },
+        ),
+        results: [{ channel: "discord", messageId: "msg-1" }],
+      });
+    } finally {
+      endThread();
+      endParent();
+    }
+
+    expect(markThreadDelivered).toHaveBeenCalledTimes(1);
+    expect(markParentDelivered).not.toHaveBeenCalled();
+  });
+
   it("sends component payload media sequences with the component message first", async () => {
     hoisted.sendDiscordComponentMessageMock.mockResolvedValueOnce({
       messageId: "component-1",
