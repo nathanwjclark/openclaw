@@ -164,6 +164,56 @@ const MemorySchema = z
   .strict()
   .optional();
 
+const ExtrapolationAgentOverrideSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+  })
+  .strict();
+
+const ExtrapolationDefaultsSchema = z
+  .object({
+    budgetNodes: z.number().int().positive().optional(),
+    gapRelevanceThreshold: z.number().min(0).max(1).optional(),
+    gapConfidenceThreshold: z.number().min(0).max(1).optional(),
+    maxIterations: z.number().int().positive().optional(),
+    autoFlowOnPromotions: z.number().int().positive().optional(),
+    includeBackwardChainInTasks: z.boolean().optional(),
+  })
+  .strict();
+
+const ExtrapolationModelsSchema = z
+  .object({
+    seed: z.string().optional(),
+    revision: z.string().optional(),
+  })
+  .strict();
+
+const ExtrapolationMemorySchema = z
+  .object({
+    crossGraphReinforcement: z.number().int().positive().optional(),
+    confidenceFloor: z.number().min(0).max(1).optional(),
+    injectIntoSeed: z.boolean().optional(),
+  })
+  .strict();
+
+const ExtrapolationRetentionSchema = z
+  .object({
+    pruneAfter: z.null().optional(),
+  })
+  .strict();
+
+const ExtrapolationSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    perAgent: z.record(z.string(), ExtrapolationAgentOverrideSchema).optional(),
+    defaults: ExtrapolationDefaultsSchema.optional(),
+    models: ExtrapolationModelsSchema.optional(),
+    memory: ExtrapolationMemorySchema.optional(),
+    retention: ExtrapolationRetentionSchema.optional(),
+  })
+  .strict()
+  .optional();
+
 const HttpUrlSchema = z
   .string()
   .url()
@@ -1088,6 +1138,7 @@ export const OpenClawSchema = z
       })
       .optional(),
     memory: MemorySchema,
+    extrapolation: ExtrapolationSchema,
     mcp: McpConfigSchema,
     skills: z
       .object({
