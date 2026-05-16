@@ -6,6 +6,7 @@ import { resolveThreadBindingSpawnPolicy } from "../channels/thread-bindings-pol
 import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { SubagentSpawnPreparation } from "../context-engine/types.js";
+import { promoteExtrapolationNodeAfterSpawn } from "../extrapolation/promotion.js";
 import { stringifyRouteThreadId } from "../plugin-sdk/channel-route.js";
 import { listRegisteredPluginAgentPromptGuidance } from "../plugins/command-registry-state.js";
 import type { SubagentLifecycleHookRunner } from "../plugins/hooks.js";
@@ -142,6 +143,9 @@ export type SpawnSubagentParams = {
     mimeType?: string;
   }>;
   attachMountPath?: string;
+  /** Source extrapolation node that drove this spawn, if any. */
+  extrapolationGraphId?: string;
+  extrapolationNodeId?: string;
 };
 
 export type SpawnSubagentContext = {
@@ -1258,7 +1262,20 @@ export async function spawnSubagentDirect(
       attachmentsDir: attachmentAbsDir,
       attachmentsRootDir: attachmentRootDir,
       retainAttachmentsOnKeep: retainOnSessionKeep,
+      ...(params.extrapolationGraphId ? { extrapolationGraphId: params.extrapolationGraphId } : {}),
+      ...(params.extrapolationNodeId ? { extrapolationNodeId: params.extrapolationNodeId } : {}),
     });
+    if (params.extrapolationGraphId && params.extrapolationNodeId) {
+      void promoteExtrapolationNodeAfterSpawn({
+        graphId: params.extrapolationGraphId,
+        nodeId: params.extrapolationNodeId,
+        runId: childRunId,
+        childSessionKey,
+      }).catch(() => {
+        // Promotion is best-effort: spawn lifecycle must succeed even if the
+        // extrapolation substrate is unavailable.
+      });
+    }
   } catch (err) {
     await rollbackPreparedContextEngine(contextEnginePreparation);
     if (attachmentAbsDir) {

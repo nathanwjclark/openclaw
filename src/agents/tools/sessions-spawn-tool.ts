@@ -220,6 +220,18 @@ function createSessionsSpawnToolSchema(params: {
         mountPath: Type.Optional(Type.String()),
       }),
     ),
+    extrapolation_graph_id: Type.Optional(
+      Type.String({
+        description:
+          "Source extrapolation graph id when this spawn is promoting a forward branch from a structured-reasoning graph. Stamped onto the task row for revision routing.",
+      }),
+    ),
+    extrapolation_node_id: Type.Optional(
+      Type.String({
+        description:
+          "Source extrapolation node id whose forward branch is being promoted by this spawn. Stamped onto the task row and used to mark the node as promoted in the graph.",
+      }),
+    ),
     ...(params.acpAvailable
       ? {
           resumeSessionId: Type.Optional(
@@ -310,6 +322,16 @@ export function createSessionsSpawnTool(
         params.context === "fork" || params.context === "isolated" ? params.context : undefined;
       const streamTo = runtime === "acp" && params.streamTo === "parent" ? "parent" : undefined;
       const lightContext = params.lightContext === true;
+      const extrapolationGraphId = readStringParam(params, "extrapolation_graph_id");
+      const extrapolationNodeId = readStringParam(params, "extrapolation_node_id");
+      if (
+        (extrapolationGraphId && !extrapolationNodeId) ||
+        (extrapolationNodeId && !extrapolationGraphId)
+      ) {
+        throw new ToolInputError(
+          "sessions_spawn requires both extrapolation_graph_id and extrapolation_node_id together, or neither.",
+        );
+      }
       const roleContext = requestedAgentId ? { role: requestedAgentId } : {};
       if (runtime === "acp" && !acpAvailable) {
         return jsonResult({
@@ -456,7 +478,21 @@ export function createSessionsSpawnTool(
               runTimeoutSeconds,
               expectsCompletionMessage: shouldExpectCompletionMessage,
               spawnMode: trackedSpawnMode,
+              ...(extrapolationGraphId ? { extrapolationGraphId } : {}),
+              ...(extrapolationNodeId ? { extrapolationNodeId } : {}),
             });
+            if (extrapolationGraphId && extrapolationNodeId) {
+              const { promoteExtrapolationNodeAfterSpawn } =
+                await import("../../extrapolation/promotion.js");
+              void promoteExtrapolationNodeAfterSpawn({
+                graphId: extrapolationGraphId,
+                nodeId: extrapolationNodeId,
+                runId: childRunId,
+                childSessionKey,
+              }).catch(() => {
+                // Best-effort promotion only.
+              });
+            }
           } catch (err) {
             // Best-effort only: the ACP turn was already started above, so deleting the
             // child session record here does not guarantee the in-flight run was aborted.
@@ -494,6 +530,8 @@ export function createSessionsSpawnTool(
             params.attachAs && typeof params.attachAs === "object"
               ? readStringParam(params.attachAs as Record<string, unknown>, "mountPath")
               : undefined,
+          ...(extrapolationGraphId ? { extrapolationGraphId } : {}),
+          ...(extrapolationNodeId ? { extrapolationNodeId } : {}),
         },
         {
           agentSessionKey: opts?.agentSessionKey,

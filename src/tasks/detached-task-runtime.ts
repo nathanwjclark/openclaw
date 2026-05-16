@@ -1,3 +1,5 @@
+import { scheduleRevision } from "../extrapolation/revision.js";
+import { callGateway } from "../gateway/call.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import type {
   DetachedTaskRecoveryAttemptParams,
@@ -93,16 +95,44 @@ export function recordTaskRunProgressByRunId(
 
 export function finalizeTaskRunByRunId(params: DetachedTaskFinalizeParams): TaskRecord[] {
   const runtime = getDetachedTaskLifecycleRuntime();
-  if (runtime.finalizeTaskRunByRunId) {
-    return runtime.finalizeTaskRunByRunId(params);
+  const finalized = runtime.finalizeTaskRunByRunId
+    ? runtime.finalizeTaskRunByRunId(params)
+    : params.status === "succeeded"
+      ? runtime.completeTaskRunByRunId(params)
+      : runtime.failTaskRunByRunId({ ...params, status: params.status });
+  notifyExtrapolationOnFinalize(finalized, params);
+  return finalized;
+}
+
+function notifyExtrapolationOnFinalize(
+  finalized: TaskRecord[],
+  params: DetachedTaskFinalizeParams,
+): void {
+  for (const task of finalized) {
+    const graphId = task.extrapolationGraphId;
+    if (!graphId) {
+      continue;
+    }
+    const evidence = {
+      status: params.status,
+      terminalSummary: params.terminalSummary ?? task.terminalSummary ?? null,
+      ...(params.error || task.error ? { error: params.error ?? task.error } : {}),
+      ...(task.childSessionKey ? { childSessionKey: task.childSessionKey } : {}),
+      ...(params.endedAt ? { endedAt: params.endedAt } : {}),
+    };
+    void scheduleRevision({
+      graphId,
+      ...(task.extrapolationNodeId ? { nodeId: task.extrapolationNodeId } : {}),
+      evidence,
+      callGateway,
+    }).catch((err) => {
+      log.warn("Extrapolation revision hook failed", {
+        runId: task.runId,
+        graphId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
   }
-  if (params.status === "succeeded") {
-    return runtime.completeTaskRunByRunId(params);
-  }
-  return runtime.failTaskRunByRunId({
-    ...params,
-    status: params.status,
-  });
 }
 
 export function completeTaskRunByRunId(

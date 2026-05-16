@@ -1507,6 +1507,8 @@ export function createTaskRecord(params: {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
+  extrapolationGraphId?: string;
+  extrapolationNodeId?: string;
 }): TaskRecord {
   ensureTaskRegistryReady();
   const requesterSessionKey = resolveTaskRequesterSessionKey(params);
@@ -1589,6 +1591,8 @@ export function createTaskRecord(params: {
       status,
       terminalOutcome: params.terminalOutcome,
     }),
+    extrapolationGraphId: normalizeOptionalString(params.extrapolationGraphId),
+    extrapolationNodeId: normalizeOptionalString(params.extrapolationNodeId),
   });
   if (isTerminalTaskStatus(record.status) && typeof record.cleanupAfter !== "number") {
     record.cleanupAfter =

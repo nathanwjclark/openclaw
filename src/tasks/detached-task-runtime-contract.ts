@@ -28,6 +28,8 @@ export type DetachedTaskCreateParams = {
   preferMetadata?: boolean;
   notifyPolicy?: TaskNotifyPolicy;
   deliveryStatus?: TaskDeliveryStatus;
+  extrapolationGraphId?: string;
+  extrapolationNodeId?: string;
 };
 
 export type DetachedRunningTaskCreateParams = DetachedTaskCreateParams & {
