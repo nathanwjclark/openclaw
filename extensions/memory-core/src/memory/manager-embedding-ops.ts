@@ -637,6 +637,9 @@ export abstract class MemoryManagerEmbeddingOps extends MemoryManagerSyncOps {
       chunkCount: chunks.length,
       warningShown: this.vectorDegradedWriteWarningShown,
       loadError: this.vector.loadError,
+      // When loadError is empty and the provider is unset, the degradation is
+      // upstream of sqlite-vec — let the warning text reflect that.
+      providerUnavailableReason: this.provider ? undefined : "no embedding provider configured",
       warn: (message) => log.warn(message),
     });
     this.upsertFileRecord(entry, source);

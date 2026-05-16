@@ -764,7 +764,7 @@ describe("memory cli", () => {
     expect(log).toHaveBeenCalledWith("Memory index updated (main).");
   });
 
-  it("warns on stderr when index completes without sqlite-vec embeddings", async () => {
+  it("warns about sqlite-vec when the extension genuinely failed to load", async () => {
     const close = vi.fn(async () => {});
     const sync = vi.fn(async () => {});
     mockManager({
@@ -773,8 +773,9 @@ describe("memory cli", () => {
         makeMemoryStatus({
           vector: {
             enabled: true,
+            storeAvailable: false,
             available: false,
-            loadError: "load failed",
+            loadError: "extension dlopen failed",
           },
         }),
       close,
@@ -784,9 +785,40 @@ describe("memory cli", () => {
     await runMemoryCli(["index"]);
 
     expectCliSync(sync);
-    expect(error).toHaveBeenCalledWith(
-      "Memory index WARNING (main): chunks_vec not updated — sqlite-vec unavailable: load failed. Vector recall degraded.",
-    );
+    const message = (error.mock.calls[0] ?? [])[0] as string;
+    expect(message).toContain("sqlite-vec extension failed to load: extension dlopen failed");
+    expect(message).toContain("FTS recall still works");
+    expect(close).toHaveBeenCalled();
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("warns about the missing embedding provider when sqlite-vec is fine but unused", async () => {
+    const close = vi.fn(async () => {});
+    const sync = vi.fn(async () => {});
+    mockManager({
+      sync,
+      status: () =>
+        makeMemoryStatus({
+          vector: {
+            enabled: true,
+            // storeAvailable is undefined: sqlite-vec was never even attempted
+            // because there are no embeddings to write.
+            available: false,
+            semanticAvailable: false,
+          },
+          custom: { providerUnavailableReason: "no embedding provider configured" },
+        }),
+      close,
+    });
+
+    const error = spyRuntimeErrors(defaultRuntime);
+    await runMemoryCli(["index"]);
+
+    expectCliSync(sync);
+    const message = (error.mock.calls[0] ?? [])[0] as string;
+    expect(message).toContain("no embedding provider configured");
+    expect(message).toContain("sqlite-vec is available but unused");
+    expect(message).not.toContain("failed to load");
     expect(close).toHaveBeenCalled();
     expect(process.exitCode).toBeUndefined();
   });
