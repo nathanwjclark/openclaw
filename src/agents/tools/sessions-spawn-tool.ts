@@ -6,6 +6,7 @@ import {
 } from "../../channels/thread-bindings-policy.js";
 import { getRuntimeConfig } from "../../config/config.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { applyBackwardChainPrefix } from "../../extrapolation/backward-chain.js";
 import { callGateway } from "../../gateway/call.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { normalizeDeliveryContext } from "../../utils/delivery-context.shared.js";
@@ -332,6 +333,12 @@ export function createSessionsSpawnTool(
           "sessions_spawn requires both extrapolation_graph_id and extrapolation_node_id together, or neither.",
         );
       }
+      const taskWithContext = extrapolationGraphId
+        ? applyBackwardChainPrefix(task, {
+            graphId: extrapolationGraphId,
+            ...(extrapolationNodeId ? { nodeId: extrapolationNodeId } : {}),
+          })
+        : task;
       const roleContext = requestedAgentId ? { role: requestedAgentId } : {};
       if (runtime === "acp" && !acpAvailable) {
         return jsonResult({
@@ -401,7 +408,7 @@ export function createSessionsSpawnTool(
         }
         const result = await spawnAcpDirect(
           {
-            task,
+            task: taskWithContext,
             label: label || undefined,
             agentId: requestedAgentId,
             resumeSessionId,
@@ -471,7 +478,7 @@ export function createSessionsSpawnTool(
               requesterSessionKey: requesterInternalKey,
               requesterOrigin,
               requesterDisplayKey,
-              task,
+              task: taskWithContext,
               taskName,
               cleanup: trackedCleanup,
               label: label || undefined,
@@ -511,7 +518,7 @@ export function createSessionsSpawnTool(
 
       const result = await spawnSubagentDirect(
         {
-          task,
+          task: taskWithContext,
           taskName,
           label: label || undefined,
           agentId: requestedAgentId,

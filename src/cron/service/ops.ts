@@ -582,6 +582,12 @@ function tryCreateManualTaskRun(params: {
       notifyPolicy: "silent",
       startedAt: params.startedAt,
       lastEventAt: params.startedAt,
+      ...(params.job.extrapolationGraphId
+        ? { extrapolationGraphId: params.job.extrapolationGraphId }
+        : {}),
+      ...(params.job.extrapolationNodeId
+        ? { extrapolationNodeId: params.job.extrapolationNodeId }
+        : {}),
     });
     return runId;
   } catch (error) {

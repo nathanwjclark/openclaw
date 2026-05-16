@@ -126,7 +126,8 @@ function notifyExtrapolationOnFinalize(
       evidence,
       callGateway,
     }).catch((err) => {
-      log.warn("Extrapolation revision hook failed", {
+      log.warn("finalize.extrapolation_hook_failed", {
+        event: "finalize.extrapolation_hook_failed",
         runId: task.runId,
         graphId,
         error: err instanceof Error ? err.message : String(err),

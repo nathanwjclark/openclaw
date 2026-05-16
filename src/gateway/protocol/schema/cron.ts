@@ -114,6 +114,8 @@ const CronCommonOptionalFields = {
   description: Type.Optional(Type.String()),
   enabled: Type.Optional(Type.Boolean()),
   deleteAfterRun: Type.Optional(Type.Boolean()),
+  extrapolationGraphId: Type.Optional(NonEmptyString),
+  extrapolationNodeId: Type.Optional(NonEmptyString),
 };
 
 function cronIdOrJobIdParams(extraFields: Record<string, TSchema>) {
@@ -346,6 +348,8 @@ export const CronJobSchema = Type.Object(
     delivery: Type.Optional(CronDeliverySchema),
     failureAlert: Type.Optional(Type.Union([Type.Literal(false), CronFailureAlertSchema])),
     state: CronJobStateSchema,
+    extrapolationGraphId: Type.Optional(NonEmptyString),
+    extrapolationNodeId: Type.Optional(NonEmptyString),
   },
   { additionalProperties: false },
 );
