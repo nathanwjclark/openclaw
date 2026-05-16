@@ -1,3 +1,5 @@
+import { getRuntimeConfig } from "../config/io.js";
+import { resolveMemoryConfig } from "../extrapolation/durable-facts.js";
 import { scheduleRevision } from "../extrapolation/revision.js";
 import { callGateway } from "../gateway/call.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -120,11 +122,19 @@ function notifyExtrapolationOnFinalize(
       ...(task.childSessionKey ? { childSessionKey: task.childSessionKey } : {}),
       ...(params.endedAt ? { endedAt: params.endedAt } : {}),
     };
+    const memory = (() => {
+      try {
+        return resolveMemoryConfig(getRuntimeConfig());
+      } catch {
+        return undefined;
+      }
+    })();
     void scheduleRevision({
       graphId,
       ...(task.extrapolationNodeId ? { nodeId: task.extrapolationNodeId } : {}),
       evidence,
       callGateway,
+      ...(memory ? { memory } : {}),
     }).catch((err) => {
       log.warn("finalize.extrapolation_hook_failed", {
         event: "finalize.extrapolation_hook_failed",

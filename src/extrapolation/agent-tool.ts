@@ -4,6 +4,11 @@ import { jsonResult, readStringParam, ToolInputError } from "../agents/tools/com
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import {
+  getDurableFactsForSession,
+  resolveMemoryConfig,
+  tryPromoteBackwardNode,
+} from "./durable-facts.js";
+import {
   addNode,
   bumpGraphIteration,
   createGraph,
@@ -13,7 +18,11 @@ import {
   updateNode,
 } from "./registry.js";
 import { type CallGatewayFn, runSeedPass } from "./seed.runtime.js";
-import type { ExtrapolationGraphStatus, ExtrapolationNodeStatus } from "./types.js";
+import {
+  directionForKind,
+  type ExtrapolationGraphStatus,
+  type ExtrapolationNodeStatus,
+} from "./types.js";
 
 const log = createSubsystemLogger("extrapolation");
 
@@ -144,6 +153,11 @@ async function handleSeed(
     requestChars: request.length,
   });
 
+  const memory = resolveMemoryConfig(opts.config);
+  const durableFacts = memory.injectIntoSeed
+    ? getDurableFactsForSession({ ownerKey: opts.ownerKey, sessionKey: opts.sessionKey })
+    : [];
+
   const seedOutput = await runSeedPass({
     rootRequest: request,
     agentId: opts.agentId,
@@ -151,6 +165,7 @@ async function handleSeed(
     sessionKey: opts.sessionKey,
     budgetNodes,
     callGateway: opts.callGateway,
+    ...(durableFacts.length > 0 ? { durableFacts } : {}),
     ...(seedModel ? { model: seedModel } : {}),
     ...(seedProvider ? { provider: seedProvider } : {}),
   });
@@ -174,6 +189,16 @@ async function handleSeed(
       kind: node.kind,
       byPass: "seed",
     });
+    if (directionForKind(node.kind) === "backward") {
+      tryPromoteBackwardNode({
+        ownerKey: opts.ownerKey,
+        sessionKey: opts.sessionKey,
+        kind: node.kind,
+        content: node.content,
+        sourceGraphId: graph.graphId,
+        memory,
+      });
+    }
   }
 
   // Record the seed audit pass for the graph iteration.
