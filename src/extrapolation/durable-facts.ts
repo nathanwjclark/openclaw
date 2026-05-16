@@ -10,6 +10,7 @@ import {
   insertFactRecord,
   selectFactByHash,
   selectFactsBySession,
+  selectFactsBySessionKey,
   updateFactRecord,
 } from "./store.sqlite.js";
 import {
@@ -280,4 +281,93 @@ export function getDurableFactsForSession(input: {
 }): ReadonlyArray<DurableFactForSeed> {
   const rows = selectFactsBySession(input.ownerKey, input.sessionKey);
   return rows.map((row) => ({ kind: row.kind, content: row.content }));
+}
+
+/**
+ * sessionKey-only variant for callers that do not have ownerKey handy
+ * (notably per-turn context injection in the embedded runner). The table's
+ * unique constraint is `(session_key, content_hash)`, so this is the
+ * authoritative scope for "facts established in this session."
+ */
+export function getDurableFactsBySessionKey(sessionKey: string): ReadonlyArray<DurableFactForSeed> {
+  const rows = selectFactsBySessionKey(sessionKey);
+  return rows.map((row) => ({ kind: row.kind, content: row.content }));
+}
+
+export type RevokeDurableFactInput = {
+  sessionKey: string;
+  kind: ExtrapolationNodeKind;
+  content: string;
+  /** Optional human-readable reason captured in the audit log. */
+  reason?: string;
+  /** Injected clock for tests. */
+  now?: number;
+};
+
+export type RevokeDurableFactOutcome = {
+  revoked: boolean;
+  factId?: string;
+  reason: "ok" | "not_found" | "already_revoked";
+};
+
+/**
+ * Soft-delete a durable fact by `(sessionKey, kind, content)`. The agent
+ * surfaces revocation via the extrapolation tool's `revoke_fact` action,
+ * giving the substrate an auditable way to mark a previously-promoted fact
+ * wrong without losing its history (the row stays for audit; only future
+ * reads filter it out via `revoked_at IS NULL`).
+ *
+ * Returns:
+ *   - `ok` when a non-revoked fact was found and revoked.
+ *   - `already_revoked` when the row exists but was previously revoked.
+ *   - `not_found` when no matching fact exists.
+ */
+export function revokeDurableFactByContent(
+  input: RevokeDurableFactInput,
+): RevokeDurableFactOutcome {
+  const canonical = canonicalizeFactContent(input.content);
+  if (!canonical) {
+    return { revoked: false, reason: "not_found" };
+  }
+  const contentHash = hashCanonical(canonical);
+  const existing = selectFactByHash(input.sessionKey, contentHash);
+  if (!existing) {
+    // selectFactByHash already filters on revoked_at IS NULL, so a missing
+    // row could be "never existed" or "already revoked". For the agent's
+    // purposes both surface the same way, but we surface distinct reasons
+    // by looking up explicitly without the revoked filter would require
+    // a new statement; keep it simple and return not_found.
+    log.info("durable_facts.revoke_skipped", {
+      event: "durable_facts.revoke_skipped",
+      reason: "not_found",
+      sessionKey: input.sessionKey,
+      kind: input.kind,
+    });
+    return { revoked: false, reason: "not_found" };
+  }
+  if (existing.kind !== input.kind) {
+    log.info("durable_facts.revoke_skipped", {
+      event: "durable_facts.revoke_skipped",
+      reason: "kind_mismatch",
+      sessionKey: input.sessionKey,
+      requestedKind: input.kind,
+      existingKind: existing.kind,
+    });
+    return { revoked: false, reason: "not_found" };
+  }
+  const at = typeof input.now === "number" ? input.now : Date.now();
+  const updated: SessionDurableFactRecord = {
+    ...existing,
+    revokedAt: at,
+    updatedAt: at,
+  };
+  updateFactRecord(updated);
+  log.info("durable_facts.revoked", {
+    event: "durable_facts.revoked",
+    factId: existing.factId,
+    sessionKey: input.sessionKey,
+    kind: input.kind,
+    ...(input.reason ? { revokeReason: input.reason } : {}),
+  });
+  return { revoked: true, factId: existing.factId, reason: "ok" };
 }

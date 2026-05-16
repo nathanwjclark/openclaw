@@ -236,6 +236,73 @@ describe("extrapolation agent tool", () => {
     expect(userPrompt).toContain("ship renewals dashboard");
   });
 
+  it("revokes a previously-promoted fact via revoke_fact", async () => {
+    const ownerKey = "owner-revoke";
+    const sessionKey = `session-revoke-${Math.random().toString(36).slice(2, 8)}`;
+    for (let i = 0; i < 2; i += 1) {
+      const g = createGraph({ rootRequest: "prior", ownerKey, sessionKey, agentId: "agent-test" });
+      addNode({
+        graphId: g.graphId,
+        direction: "backward",
+        kind: "stakeholder",
+        content: "Legal team approval",
+        confidence: 0.9,
+        relevance: 0.7,
+      });
+    }
+    const fact = promoteBackwardNodeIfReinforced({
+      ownerKey,
+      sessionKey,
+      kind: "stakeholder",
+      content: "Legal team approval",
+      sourceGraphId: "external",
+      threshold: 2,
+    });
+    expect(fact).toBeDefined();
+
+    const tool = buildTool({ ownerKey, sessionKey });
+    const { result } = await run(tool, {
+      action: "revoke_fact",
+      kind: "stakeholder",
+      content: "Legal team approval",
+      reason: "Legal was not actually involved",
+    });
+    const payload = JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
+    expect(payload.status).toBe("ok");
+    expect(payload.fact_id).toBe(fact?.factId);
+
+    // After revoke, the fact no longer surfaces.
+    const after = await run(buildTool({ ownerKey, sessionKey }), {
+      action: "revoke_fact",
+      kind: "stakeholder",
+      content: "Legal team approval",
+    });
+    const afterPayload = JSON.parse(
+      (after.result as { content: Array<{ text: string }> }).content[0].text,
+    );
+    expect(afterPayload.status).toBe("not_found");
+  });
+
+  it("revoke_fact rejects unknown kinds and missing content", async () => {
+    const tool = buildTool();
+    await expect(
+      run(tool, { action: "revoke_fact", kind: "forward_branch", content: "anything" }),
+    ).rejects.toThrow(/kind must be one of/);
+    await expect(run(tool, { action: "revoke_fact", kind: "purpose" })).rejects.toThrow(/content/);
+  });
+
+  it("revoke_fact returns not_found when no matching fact exists", async () => {
+    const sessionKey = `session-empty-${Math.random().toString(36).slice(2, 8)}`;
+    const tool = buildTool({ sessionKey });
+    const { result } = await run(tool, {
+      action: "revoke_fact",
+      kind: "purpose",
+      content: "no such fact",
+    });
+    const payload = JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
+    expect(payload.status).toBe("not_found");
+  });
+
   it("skips durable-fact injection when the master switch is off", async () => {
     const ownerKey = "owner-mem-off";
     const sessionKey = `session-mem-off-${Math.random().toString(36).slice(2, 8)}`;
