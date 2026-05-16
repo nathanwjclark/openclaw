@@ -50,6 +50,17 @@ const deliveryMocks = vi.hoisted(() => ({
 const editMessageDiscord = deliveryMocks.editMessageDiscord;
 const deliverDiscordReply = deliveryMocks.deliverDiscordReply;
 const createDiscordDraftStream = deliveryMocks.createDiscordDraftStream;
+const discordInternalMocks = vi.hoisted(() => ({
+  createThread: vi.fn(async () => ({ id: "thread-1" })),
+}));
+
+vi.mock("../internal/discord.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../internal/discord.js")>();
+  return {
+    ...actual,
+    createThread: discordInternalMocks.createThread,
+  };
+});
 
 vi.mock("../send.js", () => ({
   reactMessageDiscord: async (
@@ -353,6 +364,7 @@ beforeEach(() => {
   editMessageDiscord.mockClear();
   deliverDiscordReply.mockClear();
   createDiscordDraftStream.mockClear();
+  discordInternalMocks.createThread.mockClear();
   dispatchInboundMessage.mockClear();
   recordInboundSession.mockClear();
   readSessionUpdatedAt.mockClear();
@@ -1304,6 +1316,28 @@ describe("processDiscordMessage session routing", () => {
 
     expect(getLastDispatchCtx()?.InboundTurnKind).toBe("user_request");
     expect(getLastDispatchReplyOptions()?.suppressTyping).toBeUndefined();
+  });
+
+  it("does not create auto threads for Discord room events", async () => {
+    const ctx = await createBaseContext({
+      shouldRequireMention: false,
+      effectiveWasMentioned: false,
+      channelConfig: { allowed: true, autoThread: true },
+      cfg: {
+        messages: {
+          groupChat: {
+            ambientTurns: "room_event",
+          },
+        },
+        session: { store: "/tmp/openclaw-discord-process-test-sessions.json" },
+      },
+      route: BASE_CHANNEL_ROUTE,
+    });
+
+    await runProcessDiscordMessage(ctx);
+
+    expect(getLastDispatchCtx()?.InboundTurnKind).toBe("room_event");
+    expect(discordInternalMocks.createThread).not.toHaveBeenCalled();
   });
 
   it("records Discord room events as pending group context", async () => {

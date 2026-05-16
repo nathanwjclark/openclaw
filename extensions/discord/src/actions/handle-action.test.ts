@@ -235,6 +235,72 @@ describe("handleDiscordMessageAction", () => {
     expect(delivered).toBe(1);
   });
 
+  it("notifies inbound turn delivery after visible message actions", async () => {
+    const cfg = discordConfig();
+    const cases = [
+      {
+        action: "poll",
+        params: {
+          to: "channel:123",
+          pollQuestion: "Ship it?",
+          pollOption: ["yes", "no"],
+        },
+      },
+      {
+        action: "sticker",
+        params: {
+          to: "channel:123",
+          stickerId: ["sticker-1"],
+        },
+      },
+      {
+        action: "thread-create",
+        params: {
+          channelId: "123",
+          threadName: "Follow-up",
+          message: "hello",
+        },
+      },
+      {
+        action: "thread-reply",
+        params: {
+          threadId: "123",
+          message: "hello",
+        },
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      handleDiscordActionMock.mockClear();
+      let delivered = 0;
+      const end = beginDiscordInboundTurnDeliveryCorrelation(
+        "session-1",
+        {
+          outboundTo: "123",
+          outboundAccountId: "ops",
+          markInboundTurnDelivered: () => {
+            delivered += 1;
+          },
+        },
+        { inboundTurnKind: "room_event" },
+      );
+      try {
+        await handleDiscordMessageAction({
+          action: testCase.action,
+          params: testCase.params,
+          cfg,
+          accountId: "ops",
+          sessionKey: "session-1",
+          inboundTurnKind: "room_event",
+        });
+      } finally {
+        end();
+      }
+
+      expect(delivered, testCase.action).toBe(1);
+    }
+  });
+
   it("maps upload-file to Discord sendMessage with media read context", async () => {
     const mediaReadFile = vi.fn(async () => Buffer.from("image"));
     const mediaAccess = {

@@ -274,12 +274,22 @@ export async function buildDiscordMessageProcessContext(params: {
     parentSessionKey,
     useSuffix: false,
   });
+  const inboundTurnKind = resolveAmbientGroupInboundTurnKind({
+    cfg,
+    agentId: route.agentId,
+    facts: {
+      isGroup: isGuildMessage,
+      wasMentioned: ctx.effectiveWasMentioned,
+      hasControlCommand: ctx.hasControlCommand,
+      hasAbortRequest: ctx.hasAbortRequest,
+    },
+  });
   const replyPlan = await resolveDiscordAutoThreadReplyPlan({
     client,
     message,
     messageChannelId,
     isGuildMessage,
-    channelConfig,
+    channelConfig: inboundTurnKind === "room_event" ? null : channelConfig,
     threadChannel,
     channelType: channelInfo?.type,
     channelName: channelInfo?.name,
@@ -328,17 +338,6 @@ export async function buildDiscordMessageProcessContext(params: {
           storePath,
           sessionKey: effectiveSessionKey,
         });
-  const inboundTurnKind = resolveAmbientGroupInboundTurnKind({
-    cfg,
-    agentId: route.agentId,
-    facts: {
-      isGroup: isGuildMessage,
-      wasMentioned: ctx.effectiveWasMentioned,
-      hasControlCommand: ctx.hasControlCommand,
-      hasAbortRequest: ctx.hasAbortRequest,
-    },
-  });
-
   const ctxPayload = buildChannelTurnContext({
     channel: "discord",
     provider: "discord",
