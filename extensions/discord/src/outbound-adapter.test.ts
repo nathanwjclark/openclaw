@@ -12,6 +12,8 @@ await installDiscordOutboundModuleSpies(hoisted);
 
 let normalizeDiscordOutboundTarget: typeof import("./normalize.js").normalizeDiscordOutboundTarget;
 let discordOutbound: typeof import("./outbound-adapter.js").discordOutbound;
+let beginDiscordInboundTurnDeliveryCorrelation: typeof import("./inbound-turn-delivery.js").beginDiscordInboundTurnDeliveryCorrelation;
+let withDiscordInboundTurnDeliveryMetadata: typeof import("./inbound-turn-delivery.js").withDiscordInboundTurnDeliveryMetadata;
 
 type MockCallSource = { mock: { calls: Array<Array<unknown>> } };
 
@@ -39,6 +41,8 @@ function mockObjectArg(
 beforeAll(async () => {
   ({ normalizeDiscordOutboundTarget } = await import("./normalize.js"));
   ({ discordOutbound } = await import("./outbound-adapter.js"));
+  ({ beginDiscordInboundTurnDeliveryCorrelation, withDiscordInboundTurnDeliveryMetadata } =
+    await import("./inbound-turn-delivery.js"));
 });
 
 describe("normalizeDiscordOutboundTarget", () => {
@@ -457,6 +461,41 @@ describe("discordOutbound", () => {
     });
 
     expect(touchThread).toHaveBeenCalledWith({ threadId: "thread-1" });
+  });
+
+  it("marks room-event inbound delivery after shared outbound delivery succeeds", async () => {
+    const markInboundTurnDelivered = vi.fn();
+    const end = beginDiscordInboundTurnDeliveryCorrelation(
+      "agent:main:discord:guild:g1",
+      {
+        outboundTo: "channel:parent-1",
+        outboundAccountId: "default",
+        markInboundTurnDelivered,
+      },
+      { inboundTurnKind: "room_event" },
+    );
+    try {
+      await discordOutbound.afterDeliverPayload?.({
+        cfg: {},
+        target: {
+          channel: "discord",
+          to: "channel:parent-1",
+          accountId: "default",
+        },
+        payload: withDiscordInboundTurnDeliveryMetadata(
+          { text: "delivered" },
+          {
+            sessionKey: "agent:main:discord:guild:g1",
+            inboundTurnKind: "room_event",
+          },
+        ),
+        results: [{ channel: "discord", messageId: "msg-1" }],
+      });
+    } finally {
+      end();
+    }
+
+    expect(markInboundTurnDelivered).toHaveBeenCalledTimes(1);
   });
 
   it("sends component payload media sequences with the component message first", async () => {

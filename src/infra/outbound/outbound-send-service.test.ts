@@ -641,13 +641,22 @@ describe("executeSendAction", () => {
         cfg: {},
         channel: "discord",
         params: { to: "channel:123", message: "hello" },
+        sessionKey: "agent:main:discord:guild:g1",
+        inboundTurnKind: "room_event",
         dryRun: false,
       },
       to: "channel:123",
       message: "hello",
     });
 
-    expect(prepareSendPayload).toHaveBeenCalled();
+    expect(prepareSendPayload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: expect.objectContaining({
+          sessionKey: "agent:main:discord:guild:g1",
+          inboundTurnKind: "room_event",
+        }),
+      }),
+    );
     expect(mocks.dispatchChannelMessageAction).not.toHaveBeenCalled();
     const sendArgs = expectSingleCallFields(mocks.sendMessage, {
       channel: "discord",

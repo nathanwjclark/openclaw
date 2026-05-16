@@ -1319,10 +1319,19 @@ describe("processDiscordMessage session routing", () => {
   });
 
   it("does not create auto threads for Discord room events", async () => {
+    const guildHistories = new Map();
     const ctx = await createBaseContext({
       shouldRequireMention: false,
       effectiveWasMentioned: false,
       channelConfig: { allowed: true, autoThread: true },
+      guildHistories,
+      historyLimit: 10,
+      historyEntry: {
+        sender: "Alice",
+        body: "ambient note",
+        timestamp: 123,
+        messageId: "m1",
+      },
       cfg: {
         messages: {
           groupChat: {
@@ -1338,6 +1347,14 @@ describe("processDiscordMessage session routing", () => {
 
     expect(getLastDispatchCtx()?.InboundTurnKind).toBe("room_event");
     expect(discordInternalMocks.createThread).not.toHaveBeenCalled();
+    expect(guildHistories.get("c1")).toEqual([
+      {
+        sender: "Alice",
+        body: "ambient note",
+        timestamp: 123,
+        messageId: "m1",
+      },
+    ]);
   });
 
   it("records Discord room events as pending group context", async () => {

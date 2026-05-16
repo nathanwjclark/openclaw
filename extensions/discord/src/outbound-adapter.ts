@@ -11,6 +11,7 @@ import {
 } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { chunkDiscordTextWithMode } from "./chunk.js";
 import { withDiscordDeliveryRetry } from "./delivery-retry.js";
+import { notifyDiscordInboundTurnOutboundPayloadSuccess } from "./inbound-turn-delivery.js";
 import { isLikelyDiscordVideoMedia } from "./media-detection.js";
 import type { ThreadBindingRecord } from "./monitor/thread-bindings.js";
 import { normalizeDiscordOutboundTarget } from "./normalize.js";
@@ -287,7 +288,12 @@ export const discordOutbound: ChannelOutboundAdapter = {
           }),
       }),
   }),
-  afterDeliverPayload: async ({ target }) => {
+  afterDeliverPayload: async ({ target, payload }) => {
+    notifyDiscordInboundTurnOutboundPayloadSuccess({
+      payload,
+      to: target.to,
+      accountId: target.accountId,
+    });
     const threadId = normalizeOptionalStringifiedId(target.threadId);
     if (!threadId) {
       return;

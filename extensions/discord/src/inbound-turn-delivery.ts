@@ -1,3 +1,5 @@
+import type { ReplyPayload } from "openclaw/plugin-sdk/reply-payload";
+
 export type DiscordInboundTurnDeliveryEnd = () => void;
 
 type ActiveTurn = {
@@ -6,6 +8,7 @@ type ActiveTurn = {
   markInboundTurnDelivered: () => void;
 };
 
+const DISCORD_INBOUND_TURN_DELIVERY_KEY = "__openclawInboundTurnDelivery";
 const registry = new Map<string, ActiveTurn>();
 
 function normalizeDiscordDeliveryTarget(value: string): string {
@@ -68,4 +71,61 @@ export function notifyDiscordInboundTurnOutboundSuccess(params: {
     return;
   }
   turn.markInboundTurnDelivered();
+}
+
+function readRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+export function withDiscordInboundTurnDeliveryMetadata(
+  payload: ReplyPayload,
+  params: {
+    sessionKey?: string | null;
+    inboundTurnKind?: string;
+  },
+): ReplyPayload {
+  const sessionKey = params.sessionKey?.trim();
+  if (!sessionKey || params.inboundTurnKind !== "room_event") {
+    return payload;
+  }
+  const channelData = readRecord(payload.channelData) ?? {};
+  const discordData = readRecord(channelData.discord) ?? {};
+  return {
+    ...payload,
+    channelData: {
+      ...channelData,
+      discord: {
+        ...discordData,
+        [DISCORD_INBOUND_TURN_DELIVERY_KEY]: {
+          sessionKey,
+          inboundTurnKind: params.inboundTurnKind,
+        },
+      },
+    },
+  };
+}
+
+export function notifyDiscordInboundTurnOutboundPayloadSuccess(params: {
+  payload: ReplyPayload;
+  to: string;
+  accountId?: string | null;
+}): void {
+  const channelData = readRecord(params.payload.channelData);
+  const discordData = readRecord(channelData?.discord);
+  const metadata = readRecord(discordData?.[DISCORD_INBOUND_TURN_DELIVERY_KEY]);
+  if (!metadata) {
+    return;
+  }
+  notifyDiscordInboundTurnOutboundSuccess({
+    sessionKey: readString(metadata.sessionKey),
+    inboundTurnKind: readString(metadata.inboundTurnKind),
+    to: params.to,
+    accountId: params.accountId,
+  });
 }

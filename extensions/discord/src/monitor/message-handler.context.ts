@@ -152,6 +152,16 @@ export async function buildDiscordMessageProcessContext(params: {
     storePath,
     sessionKey: route.sessionKey,
   });
+  const inboundTurnKind = resolveAmbientGroupInboundTurnKind({
+    cfg,
+    agentId: route.agentId,
+    facts: {
+      isGroup: isGuildMessage,
+      wasMentioned: ctx.effectiveWasMentioned,
+      hasControlCommand: ctx.hasControlCommand,
+      hasAbortRequest: ctx.hasAbortRequest,
+    },
+  });
   const channelHistory = createChannelHistoryWindow({ historyMap: guildHistories });
   let combinedBody = formatInboundEnvelope({
     channel: "Discord",
@@ -164,7 +174,9 @@ export async function buildDiscordMessageProcessContext(params: {
     envelope: envelopeOptions,
   });
   const shouldIncludeChannelHistory =
-    !isDirectMessage && !(isGuildMessage && channelConfig?.autoThread && !threadChannel);
+    !isDirectMessage &&
+    (inboundTurnKind === "room_event" ||
+      !(isGuildMessage && channelConfig?.autoThread && !threadChannel));
   if (shouldIncludeChannelHistory) {
     combinedBody = channelHistory.buildPendingContext({
       historyKey: messageChannelId,
@@ -273,16 +285,6 @@ export async function buildDiscordMessageProcessContext(params: {
     threadId: threadChannel ? messageChannelId : undefined,
     parentSessionKey,
     useSuffix: false,
-  });
-  const inboundTurnKind = resolveAmbientGroupInboundTurnKind({
-    cfg,
-    agentId: route.agentId,
-    facts: {
-      isGroup: isGuildMessage,
-      wasMentioned: ctx.effectiveWasMentioned,
-      hasControlCommand: ctx.hasControlCommand,
-      hasAbortRequest: ctx.hasAbortRequest,
-    },
   });
   const replyPlan = await resolveDiscordAutoThreadReplyPlan({
     client,
