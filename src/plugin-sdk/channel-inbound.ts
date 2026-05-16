@@ -21,6 +21,8 @@ export {
   matchesMentionWithExplicit,
   normalizeMentionText,
 } from "../auto-reply/reply/mentions.js";
+export { resolveAmbientGroupInboundTurnKind } from "../auto-reply/reply/group-turn-kind.js";
+export type { AmbientGroupInboundTurnFacts } from "../auto-reply/reply/group-turn-kind.js";
 export {
   createChannelInboundDebouncer,
   shouldDebounceTextInbound,

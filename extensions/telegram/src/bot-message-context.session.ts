@@ -1,8 +1,8 @@
-import { resolveAgentConfig } from "openclaw/plugin-sdk/agent-runtime";
 import {
   type BuildChannelTurnContextParams,
   type BuiltChannelTurnContext,
   formatInboundEnvelope,
+  resolveAmbientGroupInboundTurnKind,
   resolveEnvelopeFormatOptions,
   toLocationContext,
   type NormalizedLocation,
@@ -66,17 +66,6 @@ const sessionRuntimeMethods = [
   "resolvePinnedMainDmOwnerFromAllowlist",
   "resolveStorePath",
 ] as const satisfies readonly (keyof TelegramMessageContextSessionRuntime)[];
-
-function resolveAmbientGroupTurnKind(
-  cfg: OpenClawConfig,
-  agentId: string,
-): BuildChannelTurnContextParams["message"]["inboundTurnKind"] {
-  const agentGroupChat = resolveAgentConfig(cfg, agentId)?.groupChat;
-  if (agentGroupChat && Object.hasOwn(agentGroupChat, "ambientTurns")) {
-    return agentGroupChat.ambientTurns ?? "user_request";
-  }
-  return cfg.messages?.groupChat?.ambientTurns ?? "user_request";
-}
 
 function hasCompleteSessionRuntime(
   runtime: TelegramMessageContextSessionRuntimeOverrides | undefined,
@@ -426,19 +415,20 @@ export async function buildTelegramInboundContextPayload(params: {
   const telegramTo = `telegram:${chatId}`;
   const locationContext = locationData ? toLocationContext(locationData) : undefined;
   const commandSource = options?.commandSource;
-  const ambientGroupTurnKind = resolveAmbientGroupTurnKind(cfg, route.agentId);
   const hasAbortRequest = isAbortRequestText(rawBody, {
     botUsername: normalizeOptionalLowercaseString(primaryCtx.me?.username),
   });
-  const inboundTurnKind =
-    ambientGroupTurnKind === "room_event" &&
-    isGroup &&
-    !effectiveWasMentioned &&
-    !hasControlCommand &&
-    !hasAbortRequest &&
-    commandSource !== "native"
-      ? "room_event"
-      : "user_request";
+  const inboundTurnKind = resolveAmbientGroupInboundTurnKind({
+    cfg,
+    agentId: route.agentId,
+    facts: {
+      isGroup,
+      wasMentioned: effectiveWasMentioned,
+      hasControlCommand,
+      hasAbortRequest,
+      commandSource,
+    },
+  });
   const ctxPayload = sessionRuntime.buildChannelTurnContext({
     channel: "telegram",
     accountId: route.accountId,
