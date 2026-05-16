@@ -40,8 +40,13 @@ describe("runSeedPass", () => {
     expect(args.method).toBe("agent");
     expect(args.params.modelRun).toBe(true);
     expect(args.params.promptMode).toBe("none");
-    expect(args.params.disableTools).toBe(true);
     expect(args.params.agentId).toBe("agent-alpha");
+    // The gateway's agent method rejects systemPrompt / disableTools as
+    // unknown properties. modelRun:true already disables tools internally,
+    // and the seed format instructions are inlined into `message`.
+    expect(args.params.systemPrompt).toBeUndefined();
+    expect(args.params.disableTools).toBeUndefined();
+    expect(args.params.message).toContain("structured-thinking pass");
   });
 
   it("strips markdown code fences before parsing", async () => {
