@@ -38,6 +38,7 @@ import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-pay
 import { danger, logVerbose, shouldLogVerbose } from "openclaw/plugin-sdk/runtime-env";
 import { resolveDiscordMaxLinesPerMessage } from "../accounts.js";
 import { createDiscordRestClient } from "../client.js";
+import { beginDiscordInboundTurnDeliveryCorrelation } from "../inbound-turn-delivery.js";
 import { removeReactionDiscord } from "../send.js";
 import { editMessageDiscord } from "../send.messages.js";
 import { resolveDiscordTargetChannelId } from "../send.shared.js";
@@ -426,6 +427,17 @@ export async function processDiscordMessage(
       limit: historyLimit,
     });
   };
+  const endDiscordInboundTurnDeliveryCorrelation = isRoomEvent
+    ? beginDiscordInboundTurnDeliveryCorrelation(
+        ctxPayload.SessionKey,
+        {
+          outboundTo: messageChannelId,
+          outboundAccountId: route.accountId,
+          markInboundTurnDelivered: clearGroupHistory,
+        },
+        { inboundTurnKind: ctxPayload.InboundTurnKind },
+      )
+    : () => {};
 
   const deliverChannelId = deliverTarget.startsWith("channel:")
     ? deliverTarget.slice("channel:".length)
@@ -832,6 +844,7 @@ export async function processDiscordMessage(
     dispatchError = true;
     throw err;
   } finally {
+    endDiscordInboundTurnDeliveryCorrelation();
     try {
       await draftPreview.cleanup();
     } finally {

@@ -227,6 +227,8 @@ export const discordMessageActions: ChannelMessageActionAdapter = {
     mediaAccess,
     mediaLocalRoots,
     mediaReadFile,
+    sessionKey,
+    inboundTurnKind,
   }) => {
     return await (
       await loadDiscordChannelActionsRuntime()
@@ -240,6 +242,8 @@ export const discordMessageActions: ChannelMessageActionAdapter = {
       mediaAccess,
       mediaLocalRoots,
       mediaReadFile,
+      ...(sessionKey ? { sessionKey } : {}),
+      ...(inboundTurnKind ? { inboundTurnKind } : {}),
     });
   },
 };

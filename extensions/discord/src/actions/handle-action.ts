@@ -13,6 +13,7 @@ import {
 } from "openclaw/plugin-sdk/interactive-runtime";
 import { normalizeOptionalStringifiedId } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { handleDiscordAction } from "../../action-runtime-api.js";
+import { notifyDiscordInboundTurnOutboundSuccess } from "../inbound-turn-delivery.js";
 import {
   buildDiscordInteractiveComponents,
   buildDiscordPresentationComponents,
@@ -45,6 +46,8 @@ export async function handleDiscordMessageAction(
     | "mediaAccess"
     | "mediaLocalRoots"
     | "mediaReadFile"
+    | "sessionKey"
+    | "inboundTurnKind"
   >,
 ): Promise<AgentToolResult<unknown>> {
   const { action, params, cfg } = ctx;
@@ -106,7 +109,7 @@ export async function handleDiscordMessageAction(
     const sessionKey = readStringParam(params, "__sessionKey");
     const agentId = readStringParam(params, "__agentId");
     const threadName = readStringParam(params, "threadName");
-    return await handleDiscordAction(
+    const result = await handleDiscordAction(
       {
         action: "sendMessage",
         accountId: accountId ?? undefined,
@@ -127,6 +130,13 @@ export async function handleDiscordMessageAction(
       cfg,
       actionOptions,
     );
+    notifyDiscordInboundTurnOutboundSuccess({
+      sessionKey: ctx.sessionKey ?? sessionKey ?? undefined,
+      to,
+      accountId,
+      inboundTurnKind: ctx.inboundTurnKind,
+    });
+    return result;
   }
 
   if (action === "upload-file") {
@@ -147,7 +157,7 @@ export async function handleDiscordMessageAction(
     const suppressEmbeds = readBooleanParam(params, "suppressEmbeds");
     const sessionKey = readStringParam(params, "__sessionKey");
     const agentId = readStringParam(params, "__agentId");
-    return await handleDiscordAction(
+    const result = await handleDiscordAction(
       {
         action: "sendMessage",
         accountId: accountId ?? undefined,
@@ -164,6 +174,13 @@ export async function handleDiscordMessageAction(
       cfg,
       actionOptions,
     );
+    notifyDiscordInboundTurnOutboundSuccess({
+      sessionKey: ctx.sessionKey ?? sessionKey ?? undefined,
+      to,
+      accountId,
+      inboundTurnKind: ctx.inboundTurnKind,
+    });
+    return result;
   }
 
   if (action === "poll") {

@@ -6,6 +6,7 @@ import {
 } from "openclaw/plugin-sdk/inbound-reply-dispatch";
 import type { ReplyPayload } from "openclaw/plugin-sdk/reply-dispatch-runtime";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { notifyDiscordInboundTurnOutboundSuccess } from "../inbound-turn-delivery.js";
 import type { DiscordMessagePreflightContext } from "./message-handler.preflight.js";
 
 const sendMocks = vi.hoisted(() => ({
@@ -1339,6 +1340,44 @@ describe("processDiscordMessage session routing", () => {
         messageId: "m1",
       },
     ]);
+  });
+
+  it("clears Discord room event history after a visible message tool send", async () => {
+    const guildHistories = new Map();
+    const ctx = await createBaseContext({
+      shouldRequireMention: false,
+      effectiveWasMentioned: false,
+      guildHistories,
+      historyLimit: 10,
+      historyEntry: {
+        sender: "Alice",
+        body: "ambient note",
+        timestamp: 123,
+        messageId: "m1",
+      },
+      cfg: {
+        messages: {
+          groupChat: {
+            ambientTurns: "room_event",
+          },
+        },
+        session: { store: "/tmp/openclaw-discord-process-test-sessions.json" },
+      },
+      route: BASE_CHANNEL_ROUTE,
+    });
+    dispatchInboundMessage.mockImplementationOnce(async () => {
+      notifyDiscordInboundTurnOutboundSuccess({
+        sessionKey: "agent:main:discord:guild:g1",
+        to: "channel:c1",
+        accountId: "default",
+        inboundTurnKind: "room_event",
+      });
+      return createNoQueuedDispatchResult();
+    });
+
+    await runProcessDiscordMessage(ctx);
+
+    expect(guildHistories.get("c1")).toEqual([]);
   });
 
   it("keeps Discord room events quiet across ack and status reactions", async () => {

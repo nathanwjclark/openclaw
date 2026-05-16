@@ -6,6 +6,7 @@ const handleDiscordActionMock = vi
   .spyOn(runtimeModule, "handleDiscordAction")
   .mockResolvedValue({ content: [], details: { ok: true } });
 const { handleDiscordMessageAction } = await import("./handle-action.js");
+const { beginDiscordInboundTurnDeliveryCorrelation } = await import("../inbound-turn-delivery.js");
 
 function discordConfig(actions?: Record<string, boolean>): OpenClawConfig {
   return {
@@ -199,6 +200,39 @@ describe("handleDiscordMessageAction", () => {
       cfg,
       options: defaultActionOptions(),
     });
+  });
+
+  it("notifies inbound turn delivery after message sends", async () => {
+    const cfg = discordConfig();
+    let delivered = 0;
+    const end = beginDiscordInboundTurnDeliveryCorrelation(
+      "session-1",
+      {
+        outboundTo: "123",
+        outboundAccountId: "ops",
+        markInboundTurnDelivered: () => {
+          delivered += 1;
+        },
+      },
+      { inboundTurnKind: "room_event" },
+    );
+    try {
+      await handleDiscordMessageAction({
+        action: "send",
+        params: {
+          to: "channel:123",
+          message: "hello",
+        },
+        cfg,
+        accountId: "ops",
+        sessionKey: "session-1",
+        inboundTurnKind: "room_event",
+      });
+    } finally {
+      end();
+    }
+
+    expect(delivered).toBe(1);
   });
 
   it("maps upload-file to Discord sendMessage with media read context", async () => {
