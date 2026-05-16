@@ -151,6 +151,43 @@ describe("cron service timer seam coverage", () => {
     createTaskRecordSpy.mockRestore();
   });
 
+  it("stamps extrapolation graph/node ids onto the task ledger row", async () => {
+    const { storePath } = await makeStorePath();
+    const now = Date.parse("2026-03-23T12:00:00.000Z");
+    const enqueueSystemEvent = vi.fn();
+    const requestHeartbeat = vi.fn();
+
+    const job = createDueMainJob({ now, wakeMode: "next-heartbeat" });
+    job.extrapolationGraphId = "graph-extrap-1";
+    job.extrapolationNodeId = "node-extrap-7";
+
+    await writeCronStoreSnapshot({
+      storePath,
+      jobs: [job],
+    });
+
+    const createTaskRecordSpy = vi.spyOn(detachedTaskRuntime, "createRunningTaskRun");
+
+    const state = createCronServiceState({
+      storePath,
+      cronEnabled: true,
+      log: logger,
+      nowMs: () => now,
+      enqueueSystemEvent,
+      requestHeartbeat,
+      runIsolatedAgentJob: vi.fn(async () => ({ status: "ok" as const })),
+    });
+
+    await onTimer(state);
+
+    expect(createTaskRecordSpy).toHaveBeenCalled();
+    const callArgs = createTaskRecordSpy.mock.calls[0]?.[0];
+    expect(callArgs?.extrapolationGraphId).toBe("graph-extrap-1");
+    expect(callArgs?.extrapolationNodeId).toBe("node-extrap-7");
+
+    createTaskRecordSpy.mockRestore();
+  });
+
   it("reloads externally edited split-store schedules without firing stale slots", async () => {
     const { storePath } = await makeStorePath();
     const now = Date.parse("2026-03-23T06:00:00.000Z");

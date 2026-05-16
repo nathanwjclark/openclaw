@@ -15,4 +15,8 @@ export type CronJobBase<TSchedule, TSessionTarget, TWakeMode, TPayload, TDeliver
     payload: TPayload;
     delivery?: TDelivery;
     failureAlert?: TFailureAlert;
+    /** Source extrapolation graph that motivated this cron, when applicable. */
+    extrapolationGraphId?: string;
+    /** Source extrapolation node within that graph. */
+    extrapolationNodeId?: string;
   };

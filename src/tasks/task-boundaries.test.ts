@@ -25,6 +25,10 @@ const RAW_TASK_MUTATOR_ALLOWED_CALLERS = new Set([
 ]);
 
 const TASK_FLOW_REGISTRY_ALLOWED_IMPORTERS = new Set([
+  // Extrapolation's promotion step lazily creates managed task flows for
+  // multi-promotion graphs. The dynamic import keeps the boundary one-way:
+  // the task subsystem never imports extrapolation, only the reverse.
+  "extrapolation/promotion.ts",
   "tasks/task-flow-owner-access.ts",
   "tasks/task-flow-registry.audit.ts",
   "tasks/task-flow-registry.maintenance.ts",
@@ -32,6 +36,9 @@ const TASK_FLOW_REGISTRY_ALLOWED_IMPORTERS = new Set([
 ]);
 
 const TASK_REGISTRY_ALLOWED_IMPORTERS = new Set([
+  // Extrapolation's promotion step lazily resolves the task by runId so it
+  // can link the spawned subagent's task to the auto-created flow.
+  "extrapolation/promotion.ts",
   "tasks/runtime-internal.ts",
   "tasks/task-owner-access.ts",
   "tasks/task-status-access.ts",

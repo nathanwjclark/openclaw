@@ -260,6 +260,18 @@ const CronJobObjectSchema = Type.Optional(
       deleteAfterRun: Type.Optional(Type.Boolean({ description: "Delete after first execution" })),
       sessionKey: nullableStringSchema("Explicit session key, or null to clear it"),
       failureAlert: CronFailureAlertSchema,
+      extrapolationGraphId: Type.Optional(
+        Type.String({
+          description:
+            "Source extrapolation graph id if this cron job was scheduled from a structured-reasoning graph. Stamped onto resulting task runs for revision routing.",
+        }),
+      ),
+      extrapolationNodeId: Type.Optional(
+        Type.String({
+          description:
+            "Source extrapolation node id within the extrapolation graph. Stamped onto resulting task runs so the revision pass can stamp the source node.",
+        }),
+      ),
     },
     { additionalProperties: true },
   ),
@@ -284,6 +296,12 @@ const CronPatchObjectSchema = Type.Optional(
       agentId: nullableStringSchema("Agent id, or null to clear it"),
       sessionKey: nullableStringSchema("Explicit session key, or null to clear it"),
       failureAlert: CronFailureAlertSchema,
+      extrapolationGraphId: Type.Optional(
+        Type.String({ description: "Source extrapolation graph id" }),
+      ),
+      extrapolationNodeId: Type.Optional(
+        Type.String({ description: "Source extrapolation node id" }),
+      ),
     },
     { additionalProperties: true },
   ),
