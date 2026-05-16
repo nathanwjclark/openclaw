@@ -77,6 +77,8 @@ export type TaskRecord = {
   progressSummary?: string;
   terminalSummary?: string;
   terminalOutcome?: TaskTerminalOutcome;
+  extrapolationGraphId?: string;
+  extrapolationNodeId?: string;
 };
 
 export type TaskRegistrySnapshot = {
