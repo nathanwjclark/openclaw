@@ -32,6 +32,7 @@ const TASK_RUNTIME_LABELS: Record<TaskRecord["runtime"], string> = {
   acp: "ACP",
   cli: "CLI",
   cron: "Cron",
+  agent: "Agent",
 };
 
 function formatTaskHeadline(snapshot: ReturnType<typeof buildTaskStatusSnapshot>): string {

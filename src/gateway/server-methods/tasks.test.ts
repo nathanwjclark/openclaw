@@ -212,4 +212,68 @@ describe("tasks gateway handlers", () => {
     expect(payload?.task?.status).toBe("cancelled");
     expect(payload?.task?.error).toBe("user stopped task");
   });
+
+  it("creates an agent-runtime task via tasks.create with safe defaults", async () => {
+    const { calls, respond } = captureRespond();
+    await tasksHandlers["tasks.create"]({
+      req: { type: "req", id: "req-create-1", method: "tasks.create" },
+      params: {
+        task: "Investigate the 2026.5.12 upgrade impact",
+        ownerKey: "agent:main:main",
+        sessionKey: "agent:main:main",
+        agentId: "main",
+        label: "upgrade-audit",
+      },
+      respond,
+      context: createContext(),
+      client: null,
+      isWebchatConnect: () => false,
+    });
+    expect(calls[0]?.[0]).toBe(true);
+    const payload = calls[0]?.[1] as TaskResponsePayload | undefined;
+    expect(payload?.task?.runtime).toBe("agent");
+    expect(payload?.task?.status).toBe("queued");
+    expect(payload?.task?.agentId).toBe("main");
+    expect(payload?.task?.ownerKey).toBe("agent:main:main");
+    expect(payload?.task?.title).toContain("upgrade-audit");
+  });
+
+  it("rejects tasks.create with a blank task field", async () => {
+    const { calls, respond } = captureRespond();
+    await tasksHandlers["tasks.create"]({
+      req: { type: "req", id: "req-create-2", method: "tasks.create" },
+      params: {
+        task: "   ",
+        ownerKey: "agent:main:main",
+        sessionKey: "agent:main:main",
+      },
+      respond,
+      context: createContext(),
+      client: null,
+      isWebchatConnect: () => false,
+    });
+    expect(calls[0]?.[0]).toBe(false);
+    const error = calls[0]?.[2];
+    expect(JSON.stringify(error)).toMatch(/task must not be blank/);
+  });
+
+  it("rejects tasks.create with unknown properties (schema-strict)", async () => {
+    const { calls, respond } = captureRespond();
+    await tasksHandlers["tasks.create"]({
+      req: { type: "req", id: "req-create-3", method: "tasks.create" },
+      params: {
+        task: "Valid task body",
+        ownerKey: "agent:main:main",
+        sessionKey: "agent:main:main",
+        unexpectedField: "should be rejected",
+      },
+      respond,
+      context: createContext(),
+      client: null,
+      isWebchatConnect: () => false,
+    });
+    expect(calls[0]?.[0]).toBe(false);
+    const error = calls[0]?.[2];
+    expect(JSON.stringify(error)).toMatch(/unexpectedField/);
+  });
 });

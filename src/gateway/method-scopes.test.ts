@@ -45,6 +45,7 @@ describe("method scope resolution", () => {
     ["sessions.send", ["operator.write"]],
     ["sessions.abort", ["operator.write"]],
     ["tasks.cancel", ["operator.write"]],
+    ["tasks.create", ["operator.write"]],
     ["tools.invoke", ["operator.write"]],
     ["sessions.messages.subscribe", ["operator.read"]],
     ["sessions.messages.unsubscribe", ["operator.read"]],
