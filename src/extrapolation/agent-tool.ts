@@ -3,6 +3,7 @@ import type { AnyAgentTool } from "../agents/tools/common.js";
 import { jsonResult, readStringParam, ToolInputError } from "../agents/tools/common.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { AgentTaskRateLimitError, createAgentTaskRecord } from "../tasks/agent-task-create.js";
 import {
   getDurableFactsForSession,
   resolveMemoryConfig,
@@ -14,6 +15,7 @@ import {
   bumpGraphIteration,
   createGraph,
   getGraph,
+  getNode,
   getNodesForGraph,
   transitionGraph,
   updateNode,
@@ -37,6 +39,7 @@ ACTIONS:
 - revise(graph_id, evidence): produce a new revision pass given new evidence. (Deferred to Phase 2b; calling this now returns a 'not implemented' error.)
 - close(graph_id, [reason]): mark a graph resolved or abandoned when the root request is satisfied or the plan is invalidated. status: resolved | abandoned.
 - revoke_fact(kind, content, [reason]): soft-delete a previously-established session fact (purpose / role_context / business_context / stakeholder) when it turns out to be wrong. Pass the kind and the fact's content as it appears in your "Established context" block. Reason is optional but recommended.
+- materialize_forward_node(node_id, [task], [label], [task_kind]): commit a forward branch / contingency / dependency to the durable task backlog. Creates an agent-runtime task linked back to the node (so updates flow both ways), and marks the node as promoted with the new task_id. Use this when a forward branch is worth surfacing to the user / future sessions; afterward you can dispatch it via sessions_spawn(task_id=...). Returns { task_id, node_status: "promoted" }.
 
 USE THIS TOOL when the request is complex/strategic (multiple angles, requires understanding intent, depends on context you may not have). Skip for factoid lookups, direct commands, or requests with unambiguous purpose.`;
 
@@ -49,6 +52,7 @@ const ExtrapolationToolSchema = Type.Object({
     Type.Literal("revise"),
     Type.Literal("close"),
     Type.Literal("revoke_fact"),
+    Type.Literal("materialize_forward_node"),
   ]),
   request: Type.Optional(Type.String()),
   budget_nodes: Type.Optional(Type.Number()),
@@ -86,6 +90,9 @@ const ExtrapolationToolSchema = Type.Object({
     ]),
   ),
   content: Type.Optional(Type.String()),
+  task: Type.Optional(Type.String()),
+  label: Type.Optional(Type.String()),
+  task_kind: Type.Optional(Type.String()),
 });
 
 export type CreateExtrapolationToolOptions = {
@@ -302,6 +309,96 @@ function handleRevokeFact(
   });
 }
 
+function handleMaterializeForwardNode(
+  params: Record<string, unknown>,
+  opts: CreateExtrapolationToolOptions,
+): unknown {
+  const nodeId = readStringParam(params, "node_id", { required: true });
+  const labelOverride = readStringParam(params, "label");
+  const kindOverride = readStringParam(params, "task_kind");
+  const taskOverride = readStringParam(params, "task");
+
+  const node = getNode(nodeId);
+  if (!node) {
+    throw new ToolInputError(`extrapolation.materialize_forward_node: node ${nodeId} not found`);
+  }
+  if (directionForKind(node.kind) !== "forward") {
+    throw new ToolInputError(
+      `extrapolation.materialize_forward_node: node ${nodeId} is not a forward node (direction=${directionForKind(node.kind)}, kind=${node.kind}). Only forward branches / contingencies / dependencies can be materialized.`,
+    );
+  }
+  if (node.status === "promoted") {
+    return jsonResult({
+      status: "already_promoted",
+      node_id: nodeId,
+      task_id: node.promotedTaskId,
+      message: "this forward node was already materialized into a task",
+    });
+  }
+  if (node.status === "pruned" || node.status === "invalidated") {
+    throw new ToolInputError(
+      `extrapolation.materialize_forward_node: node ${nodeId} status is '${node.status}'; only open / resolved forward nodes can be materialized.`,
+    );
+  }
+  const graph = getGraph(node.graphId);
+  if (!graph) {
+    throw new ToolInputError(
+      `extrapolation.materialize_forward_node: parent graph ${node.graphId} not found for node ${nodeId}`,
+    );
+  }
+  if (graph.ownerKey !== opts.ownerKey) {
+    throw new ToolInputError(
+      `extrapolation.materialize_forward_node: node ${nodeId} belongs to a graph owned by a different session`,
+    );
+  }
+
+  const taskDescription = (taskOverride ?? node.content).trim();
+  if (!taskDescription) {
+    throw new ToolInputError(
+      "extrapolation.materialize_forward_node: derived task description is empty; pass an explicit `task` to override the node content",
+    );
+  }
+  try {
+    const record = createAgentTaskRecord({
+      ownerKey: opts.ownerKey,
+      sessionKey: opts.sessionKey,
+      task: taskDescription,
+      ...(opts.agentId ? { agentId: opts.agentId } : {}),
+      ...(labelOverride !== undefined ? { label: labelOverride } : {}),
+      ...(kindOverride !== undefined ? { taskKind: kindOverride } : {}),
+      extrapolationGraphId: node.graphId,
+      extrapolationNodeId: node.nodeId,
+    });
+    updateNode(nodeId, { status: "promoted", promotedTaskId: record.taskId });
+    log.info("node.materialized_to_task", {
+      event: "node.materialized_to_task",
+      graphId: node.graphId,
+      nodeId,
+      taskId: record.taskId,
+      ownerKey: opts.ownerKey,
+      sessionKey: opts.sessionKey,
+    });
+    return jsonResult({
+      status: "ok",
+      task_id: record.taskId,
+      task_status: record.status,
+      node_id: nodeId,
+      node_status: "promoted",
+      graph_id: node.graphId,
+    });
+  } catch (error) {
+    if (error instanceof AgentTaskRateLimitError) {
+      return jsonResult({
+        status: "rate_limited",
+        message: error.message,
+        active_count: error.activeCount,
+        limit: error.limit,
+      });
+    }
+    throw error;
+  }
+}
+
 function handleRevise(params: Record<string, unknown>): unknown {
   const graphId = readStringParam(params, "graph_id", { required: true });
   // Smoke-validate the graph exists so the agent gets a clear error early.
@@ -345,9 +442,13 @@ export function createExtrapolationTool(opts: CreateExtrapolationToolOptions): A
           return handleRevise(params) as Awaited<ReturnType<AnyAgentTool["execute"]>>;
         case "revoke_fact":
           return handleRevokeFact(params, opts) as Awaited<ReturnType<AnyAgentTool["execute"]>>;
+        case "materialize_forward_node":
+          return handleMaterializeForwardNode(params, opts) as Awaited<
+            ReturnType<AnyAgentTool["execute"]>
+          >;
         default:
           throw new ToolInputError(
-            `extrapolation: unknown action "${action}". Use seed | update | close | revise | revoke_fact.`,
+            `extrapolation: unknown action "${action}". Use seed | update | close | revise | revoke_fact | materialize_forward_node.`,
           );
       }
     },
