@@ -221,21 +221,123 @@ describe("tasks agent tool", () => {
       }),
     ).rejects.toThrow(/outcome/);
   });
+
+  it("list_mine returns active and recent terminal tasks for the owner", async () => {
+    const tool = buildTool();
+    const a = parsePayload(
+      await tool.execute("lm-1", { action: "create", task: "Active A", label: "a" }),
+    );
+    parsePayload(await tool.execute("lm-2", { action: "create", task: "Active B", label: "b" }));
+    const c = parsePayload(
+      await tool.execute("lm-3", { action: "create", task: "To complete", label: "c" }),
+    );
+    await tool.execute("lm-4", {
+      action: "complete",
+      task_id: c.task_id as string,
+      outcome: "succeeded",
+    });
+    const list = parsePayload(await tool.execute("lm-5", { action: "list_mine" }));
+    expect(list.status).toBe("ok");
+    expect(list.active_count).toBe(2);
+    expect(list.terminal_count).toBe(1);
+    const tasks = list.tasks as Array<Record<string, unknown>>;
+    expect(tasks.length).toBe(3);
+    expect(tasks.some((t) => t.task_id === a.task_id)).toBe(true);
+    expect(tasks.some((t) => t.task_id === c.task_id && t.status === "succeeded")).toBe(true);
+  });
+
+  it("list_mine with include_terminal=false drops terminal entries", async () => {
+    const tool = buildTool();
+    const c = parsePayload(
+      await tool.execute("lm-it-1", { action: "create", task: "Completed", label: "ct" }),
+    );
+    await tool.execute("lm-it-2", {
+      action: "complete",
+      task_id: c.task_id as string,
+      outcome: "succeeded",
+    });
+    parsePayload(await tool.execute("lm-it-3", { action: "create", task: "Active", label: "act" }));
+    const list = parsePayload(
+      await tool.execute("lm-it-4", { action: "list_mine", include_terminal: false }),
+    );
+    expect(list.active_count).toBe(1);
+    expect(list.terminal_count).toBe(1);
+    expect(list.returned_count).toBe(1);
+    const tasks = list.tasks as Array<Record<string, unknown>>;
+    expect(tasks.every((t) => t.status === "queued" || t.status === "running")).toBe(true);
+  });
+
+  it("list_mine status filter narrows to that status only", async () => {
+    const tool = buildTool();
+    await tool.execute("lf-1", { action: "create", task: "A", label: "a" });
+    await tool.execute("lf-2", { action: "create", task: "B", label: "b" });
+    const list = parsePayload(
+      await tool.execute("lf-3", { action: "list_mine", status: "queued" }),
+    );
+    const tasks = list.tasks as Array<Record<string, unknown>>;
+    expect(tasks.length).toBe(2);
+    expect(tasks.every((t) => t.status === "queued")).toBe(true);
+  });
+
+  it("list_mine rejects an unknown status literal", async () => {
+    const tool = buildTool();
+    await expect(
+      tool.execute("lf-x", { action: "list_mine", status: "almost_done" }),
+    ).rejects.toThrow(/status/);
+  });
+
+  it("get returns full task detail for the owner's task", async () => {
+    const tool = buildTool();
+    const created = parsePayload(
+      await tool.execute("g-1", { action: "create", task: "Look at me", label: "look" }),
+    );
+    const fetched = parsePayload(
+      await tool.execute("g-2", { action: "get", task_id: created.task_id as string }),
+    );
+    expect(fetched.status).toBe("ok");
+    const task = fetched.task as Record<string, unknown>;
+    expect(task.task_id).toBe(created.task_id);
+    expect(task.label).toBe("look");
+    expect(task.runtime).toBe("agent");
+  });
+
+  it("get returns not_found for an unknown task id", async () => {
+    const tool = buildTool();
+    const payload = parsePayload(
+      await tool.execute("g-nf", {
+        action: "get",
+        task_id: "00000000-0000-0000-0000-000000000000",
+      }),
+    );
+    expect(payload.status).toBe("not_found");
+  });
+
+  it("get returns ownership_mismatch when the task belongs to a different owner", async () => {
+    const otherTool = buildTool({ ownerKey: "agent:other:other", sessionKey: "agent:other:other" });
+    const other = parsePayload(
+      await otherTool.execute("om-1", { action: "create", task: "theirs", label: "theirs" }),
+    );
+    const myTool = buildTool();
+    const payload = parsePayload(
+      await myTool.execute("om-2", { action: "get", task_id: other.task_id as string }),
+    );
+    expect(payload.status).toBe("ownership_mismatch");
+  });
 });
 
 describe("isAgentTasksToolEnabled", () => {
-  it("returns false by default", () => {
-    expect(isAgentTasksToolEnabled(undefined)).toBe(false);
-    expect(isAgentTasksToolEnabled({})).toBe(false);
-    expect(isAgentTasksToolEnabled({ tools: {} })).toBe(false);
-    expect(isAgentTasksToolEnabled({ tools: { experimental: {} } })).toBe(false);
+  it("returns true by default (tasks is the agent's central backlog)", () => {
+    expect(isAgentTasksToolEnabled(undefined)).toBe(true);
+    expect(isAgentTasksToolEnabled({})).toBe(true);
+    expect(isAgentTasksToolEnabled({ tools: {} })).toBe(true);
+    expect(isAgentTasksToolEnabled({ tools: { experimental: {} } })).toBe(true);
   });
 
   it("returns true when the experimental flag is explicitly set", () => {
     expect(isAgentTasksToolEnabled({ tools: { experimental: { agentTasks: true } } })).toBe(true);
   });
 
-  it("returns false when the flag is explicitly disabled", () => {
+  it("returns false only when the flag is explicitly disabled", () => {
     expect(isAgentTasksToolEnabled({ tools: { experimental: { agentTasks: false } } })).toBe(false);
   });
 });

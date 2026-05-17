@@ -98,6 +98,38 @@ function buildSubagentDelegationPreferenceSection(params: {
   ].filter(Boolean);
 }
 
+function buildWorkTrackingSection(params: {
+  hasTasks: boolean;
+  hasUpdatePlan: boolean;
+  hasExtrapolation: boolean;
+}): string[] {
+  if (!params.hasTasks && !params.hasUpdatePlan && !params.hasExtrapolation) {
+    return [];
+  }
+  const lines: string[] = ["## Work Tracking"];
+  if (params.hasTasks) {
+    lines.push(
+      '`tasks` is your durable, cross-session backlog. The active task list is auto-injected into your context at the start of every turn (see the "Open tasks" block above when present). On wake-up, treat that block as authoritative for what\'s already in motion — resume in-progress tasks, complete stale ones, and avoid creating duplicates.',
+      "- `tasks(action=create, task, [label])` when work needs to outlive this turn — open follow-ups, things the user should see in `openclaw tasks list`, items a future session should pick up.",
+      "- `tasks(action=update_progress, task_id, progress_summary)` and `tasks(action=complete, task_id, outcome)` to walk a task through its lifecycle. `outcome` is `succeeded` if done, `blocked` if you couldn't finish.",
+      "- `tasks(action=list_mine)` for ad-hoc reads (the auto-injected block is usually enough). `tasks(action=get, task_id)` for full detail on one.",
+      "- Tasks are durable forever once terminal — they're a permanent audit log, not garbage-collected. Don't create throwaway tasks for trivial single-turn steps; use `update_plan` for those.",
+    );
+  }
+  if (params.hasUpdatePlan) {
+    lines.push(
+      "`update_plan` is for within-this-session step tracking. It is ephemeral, not user-visible, and dies with the session. Use it for multi-step turns where keeping the plan current helps your own execution; do not use it for anything the user needs to see or that should persist.",
+    );
+  }
+  if (params.hasExtrapolation) {
+    lines.push(
+      "`extrapolation` is the structured-reasoning substrate for complex/strategic requests where intent, dependencies, or stakeholders aren't obvious. Pairs naturally with `update_plan` for the same turn, and with `tasks` when forward branches deserve to become durable backlog items.",
+    );
+  }
+  lines.push("");
+  return lines;
+}
+
 const stablePromptPrefixCache = new Map<string, StablePromptPrefixCacheEntry>();
 
 function cacheStablePromptPrefix(key: string, build: () => string): string {
@@ -1046,6 +1078,11 @@ export function buildAgentSystemPrompt(params: {
         hasSessionsSpawn,
         hasSubagents: availableTools.has("subagents"),
         hasSessionsYield: availableTools.has("sessions_yield"),
+      }),
+      ...buildWorkTrackingSection({
+        hasTasks: availableTools.has("tasks"),
+        hasUpdatePlan: availableTools.has("update_plan"),
+        hasExtrapolation: availableTools.has("extrapolation"),
       }),
       ...buildOverridablePromptSection({
         override: providerSectionOverrides.interaction_style,

@@ -308,6 +308,23 @@ describe("completeAgentTask", () => {
     ).toThrow(AgentTaskTerminalError);
   });
 
+  it("never stamps cleanupAfter on terminal agent tasks (durable forever)", () => {
+    const created = createAgentTaskRecord({
+      ownerKey: OWNER,
+      sessionKey: SESSION,
+      task: "Permanent record",
+      label: "perm",
+    });
+    const completed = completeAgentTask({
+      taskId: created.taskId,
+      ownerKey: OWNER,
+      outcome: "succeeded",
+      terminalSummary: "Done.",
+    });
+    expect(completed.status).toBe("succeeded");
+    expect(completed.cleanupAfter).toBeUndefined();
+  });
+
   it("frees rate-cap capacity once completed", () => {
     const limit = 2;
     const first = createAgentTaskRecord(

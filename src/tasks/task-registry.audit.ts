@@ -156,6 +156,7 @@ export function listTaskAuditFindings(options: TaskAuditOptions = {}): TaskAudit
       task.status !== "lost" &&
       task.status !== "queued" &&
       task.status !== "running" &&
+      task.runtime !== "agent" &&
       typeof task.cleanupAfter !== "number"
     ) {
       findings.push(
