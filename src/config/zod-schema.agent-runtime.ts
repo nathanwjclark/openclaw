@@ -1072,6 +1072,7 @@ export const ToolsSchema = z
     experimental: z
       .object({
         planTool: z.boolean().optional(),
+        agentTasks: z.boolean().optional(),
       })
       .strict()
       .optional(),

@@ -54,6 +54,7 @@ import { createSessionsSendTool } from "./tools/sessions-send-tool.js";
 import { createSessionsSpawnTool } from "./tools/sessions-spawn-tool.js";
 import { createSessionsYieldTool } from "./tools/sessions-yield-tool.js";
 import { createSubagentsTool } from "./tools/subagents-tool.js";
+import { createTasksTool, isAgentTasksToolEnabled } from "./tools/tasks-tool.js";
 import { createTtsTool } from "./tools/tts-tool.js";
 import { createUpdatePlanTool } from "./tools/update-plan-tool.js";
 import { createVideoGenerateTool } from "./tools/video-generate-tool.js";
@@ -440,6 +441,16 @@ export function createOpenClawTools(
             sessionKey: options.agentSessionKey,
             config: resolvedConfig,
             callGateway: effectiveCallGateway,
+          }),
+        ]
+      : []),
+    ...(isAgentTasksToolEnabled(resolvedConfig) && options?.agentSessionKey
+      ? [
+          createTasksTool({
+            ...(sessionAgentId ? { agentId: sessionAgentId } : {}),
+            ownerKey: options.agentSessionKey,
+            sessionKey: options.agentSessionKey,
+            config: resolvedConfig,
           }),
         ]
       : []),
