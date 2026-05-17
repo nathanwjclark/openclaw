@@ -712,6 +712,8 @@ export type ToolsConfig = {
   experimental?: {
     /** Enable the structured `update_plan` tool explicitly outside strict-agentic execution mode. */
     planTool?: boolean;
+    /** Enable the durable `tasks` tool so agents can create tasks the user sees in `openclaw tasks list`. */
+    agentTasks?: boolean;
   };
 };
 

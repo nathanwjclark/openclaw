@@ -401,6 +401,7 @@ describe("config schema", () => {
     const parsed = ToolsSchema.parse({
       experimental: {
         planTool: true,
+        agentTasks: true,
       },
     });
     if (!parsed) {
@@ -408,6 +409,7 @@ describe("config schema", () => {
     }
 
     expect(parsed?.experimental?.planTool).toBe(true);
+    expect(parsed?.experimental?.agentTasks).toBe(true);
   });
 
   it("accepts simplified Tool Search config in the runtime zod schema", () => {

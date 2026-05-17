@@ -417,6 +417,8 @@ export const FIELD_HELP: Record<string, string> = {
     "Experimental built-in tool flags. Keep these off by default and enable only when you are intentionally testing a preview surface.",
   "tools.experimental.planTool":
     "Enable the experimental structured `update_plan` tool for non-trivial multi-step work tracking. Leave this off unless you explicitly want the tool outside strict-agentic embedded Pi runs.",
+  "tools.experimental.agentTasks":
+    "Enable the `tasks` tool so agents can create durable cross-session tasks the user sees in `openclaw tasks list`. Default off; enable after validating in your deployment that the agent uses it appropriately.",
   "tools.toolSearch":
     "Compact large OpenClaw, MCP, and client tool catalogs behind one search/call surface. Set to true for the default code bridge or use the object form to choose the structured fallback.",
   "tools.toolSearch.enabled":
