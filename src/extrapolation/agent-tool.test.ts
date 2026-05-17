@@ -339,3 +339,154 @@ describe("extrapolation agent tool", () => {
     expect(userPrompt).not.toContain("Established context");
   });
 });
+
+describe("extrapolation.materialize_forward_node", () => {
+  function parsePayload(result: unknown): Record<string, unknown> {
+    return JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
+  }
+
+  it("creates a queued agent task linked to a forward node and marks the node promoted", async () => {
+    const sessionKey = `session-${Math.random().toString(36).slice(2, 8)}`;
+    const ownerKey = sessionKey;
+    const tool = buildTool({ sessionKey, ownerKey });
+    const graph = createGraph({
+      rootRequest: "ship the upgrade audit",
+      ownerKey,
+      sessionKey,
+      agentId: "agent-test",
+    });
+    const node = addNode({
+      graphId: graph.graphId,
+      direction: "forward",
+      kind: "forward_branch",
+      content: "audit configuration changes across modules",
+      confidence: 0.8,
+      relevance: 0.9,
+    });
+    const { result } = await run(tool, {
+      action: "materialize_forward_node",
+      node_id: node.nodeId,
+      label: "audit-config",
+    });
+    const payload = parsePayload(result);
+    expect(payload.status).toBe("ok");
+    expect(payload.node_status).toBe("promoted");
+    expect(payload.graph_id).toBe(graph.graphId);
+    expect(typeof payload.task_id).toBe("string");
+  });
+
+  it("uses the node content as the task description when no override is provided", async () => {
+    const sessionKey = `session-${Math.random().toString(36).slice(2, 8)}`;
+    const ownerKey = sessionKey;
+    const tool = buildTool({ sessionKey, ownerKey });
+    const graph = createGraph({
+      rootRequest: "release planning",
+      ownerKey,
+      sessionKey,
+      agentId: "agent-test",
+    });
+    const node = addNode({
+      graphId: graph.graphId,
+      direction: "forward",
+      kind: "dependency",
+      content: "verify release notes are updated",
+      confidence: 0.7,
+      relevance: 0.8,
+    });
+    const { result } = await run(tool, {
+      action: "materialize_forward_node",
+      node_id: node.nodeId,
+    });
+    const payload = parsePayload(result);
+    expect(payload.status).toBe("ok");
+    const taskId = payload.task_id as string;
+    const { getTaskById } = await import("../tasks/runtime-internal.js");
+    const task = getTaskById(taskId);
+    expect(task?.task).toBe("verify release notes are updated");
+    expect(task?.extrapolationGraphId).toBe(graph.graphId);
+    expect(task?.extrapolationNodeId).toBe(node.nodeId);
+  });
+
+  it("rejects materialization of backward nodes", async () => {
+    const sessionKey = `session-${Math.random().toString(36).slice(2, 8)}`;
+    const ownerKey = sessionKey;
+    const tool = buildTool({ sessionKey, ownerKey });
+    const graph = createGraph({
+      rootRequest: "x",
+      ownerKey,
+      sessionKey,
+      agentId: "agent-test",
+    });
+    const backwardNode = addNode({
+      graphId: graph.graphId,
+      direction: "backward",
+      kind: "purpose",
+      content: "the user wants X",
+      confidence: 0.8,
+      relevance: 0.9,
+    });
+    await expect(
+      tool.execute("call-bad", {
+        action: "materialize_forward_node",
+        node_id: backwardNode.nodeId,
+      }),
+    ).rejects.toThrow(/not a forward node/);
+  });
+
+  it("returns already_promoted on a second call against the same node", async () => {
+    const sessionKey = `session-${Math.random().toString(36).slice(2, 8)}`;
+    const ownerKey = sessionKey;
+    const tool = buildTool({ sessionKey, ownerKey });
+    const graph = createGraph({
+      rootRequest: "y",
+      ownerKey,
+      sessionKey,
+      agentId: "agent-test",
+    });
+    const node = addNode({
+      graphId: graph.graphId,
+      direction: "forward",
+      kind: "contingency",
+      content: "what if upstream is down",
+      confidence: 0.6,
+      relevance: 0.7,
+    });
+    const first = parsePayload(
+      (await run(tool, { action: "materialize_forward_node", node_id: node.nodeId })).result,
+    );
+    const second = parsePayload(
+      (await run(tool, { action: "materialize_forward_node", node_id: node.nodeId })).result,
+    );
+    expect(first.status).toBe("ok");
+    expect(second.status).toBe("already_promoted");
+    expect(second.task_id).toBe(first.task_id);
+  });
+
+  it("rejects when the node belongs to a graph owned by a different session", async () => {
+    const owningSession = `session-${Math.random().toString(36).slice(2, 8)}`;
+    const graph = createGraph({
+      rootRequest: "z",
+      ownerKey: owningSession,
+      sessionKey: owningSession,
+      agentId: "agent-test",
+    });
+    const node = addNode({
+      graphId: graph.graphId,
+      direction: "forward",
+      kind: "forward_branch",
+      content: "their work",
+      confidence: 0.6,
+      relevance: 0.7,
+    });
+    const foreignTool = buildTool({
+      sessionKey: "other-session",
+      ownerKey: "other-owner",
+    });
+    await expect(
+      foreignTool.execute("call-foreign", {
+        action: "materialize_forward_node",
+        node_id: node.nodeId,
+      }),
+    ).rejects.toThrow(/different session/);
+  });
+});
