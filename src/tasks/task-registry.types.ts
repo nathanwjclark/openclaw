@@ -1,5 +1,16 @@
 import type { DeliveryContext } from "../utils/delivery-context.types.js";
 
+/**
+ * Single-agent install convention: all task / graph / durable-fact ownership collapses to this
+ * one key. Lets the agent see everything regardless of which Slack session, thread, or subagent
+ * created it; the agent uses requesterSessionKey / agentId on each record to decide relevance.
+ *
+ * The ownerKey field is preserved so per-agent or per-tenant scoping can be re-introduced later
+ * without a schema change — see openclaw-tools.ts, context-injection.ts, and the extrapolation
+ * agent tool for the callers that would need to flip back to a narrower key.
+ */
+export const GLOBAL_OWNER_KEY = "global";
+
 export type TaskRuntime = "subagent" | "acp" | "cli" | "cron" | "agent";
 
 export type TaskStatus =

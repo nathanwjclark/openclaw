@@ -346,11 +346,9 @@ function handleMaterializeForwardNode(
       `extrapolation.materialize_forward_node: parent graph ${node.graphId} not found for node ${nodeId}`,
     );
   }
-  if (graph.ownerKey !== opts.ownerKey) {
-    throw new ToolInputError(
-      `extrapolation.materialize_forward_node: node ${nodeId} belongs to a graph owned by a different session`,
-    );
-  }
+  // Ownership check skipped under the global-owner convention — see GLOBAL_OWNER_KEY in
+  // src/tasks/task-registry.types.ts. Any session on this install can materialize any graph's
+  // forward nodes.
 
   const taskDescription = (taskOverride ?? node.content).trim();
   if (!taskDescription) {

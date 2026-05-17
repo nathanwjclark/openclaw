@@ -10,6 +10,7 @@ import {
   getActiveRuntimeWebToolsMetadata,
   getActiveSecretsRuntimeSnapshot,
 } from "../secrets/runtime.js";
+import { GLOBAL_OWNER_KEY } from "../tasks/task-registry.types.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.js";
 import type { GatewayMessageChannel } from "../utils/message-channel.js";
 import { resolveAgentWorkspaceDir, resolveSessionAgentIds } from "./agent-scope.js";
@@ -437,7 +438,9 @@ export function createOpenClawTools(
       ? [
           createExtrapolationTool({
             agentId: sessionAgentId,
-            ownerKey: options.agentSessionKey,
+            // Global owner: agent sees all graphs across sessions / subagents. sessionKey still
+            // identifies the session that initiated the graph for relevance filtering on read.
+            ownerKey: GLOBAL_OWNER_KEY,
             sessionKey: options.agentSessionKey,
             config: resolvedConfig,
             callGateway: effectiveCallGateway,
@@ -448,7 +451,10 @@ export function createOpenClawTools(
       ? [
           createTasksTool({
             ...(sessionAgentId ? { agentId: sessionAgentId } : {}),
-            ownerKey: options.agentSessionKey,
+            // Global owner: durable backlog is shared across Slack channels / threads / subagents.
+            // sessionKey tags the originating session for the agent to filter on; relevance is
+            // an agent-side decision, not an ownership boundary.
+            ownerKey: GLOBAL_OWNER_KEY,
             sessionKey: options.agentSessionKey,
             config: resolvedConfig,
           }),

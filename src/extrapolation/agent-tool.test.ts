@@ -462,7 +462,9 @@ describe("extrapolation.materialize_forward_node", () => {
     expect(second.task_id).toBe(first.task_id);
   });
 
-  it("rejects when the node belongs to a graph owned by a different session", async () => {
+  it("under the global-owner convention, materialize works across ownerKeys", async () => {
+    // Pre-global-owner this rejected with "owned by a different session". Subagents and other
+    // sessions on this install can now materialize any forward node — see GLOBAL_OWNER_KEY.
     const owningSession = `session-${Math.random().toString(36).slice(2, 8)}`;
     const graph = createGraph({
       rootRequest: "z",
@@ -482,11 +484,14 @@ describe("extrapolation.materialize_forward_node", () => {
       sessionKey: "other-session",
       ownerKey: "other-owner",
     });
-    await expect(
-      foreignTool.execute("call-foreign", {
+    const result = parsePayload(
+      await foreignTool.execute("call-foreign", {
         action: "materialize_forward_node",
         node_id: node.nodeId,
       }),
-    ).rejects.toThrow(/different session/);
+    );
+    expect(result.status).toBe("ok");
+    expect(result.graph_id).toBe(graph.graphId);
+    expect(result.node_status).toBe("promoted");
   });
 });

@@ -1,6 +1,6 @@
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { listTasksForOwnerKey } from "./runtime-internal.js";
-import type { TaskRecord, TaskStatus } from "./task-registry.types.js";
+import { GLOBAL_OWNER_KEY, type TaskRecord, type TaskStatus } from "./task-registry.types.js";
 
 const DEFAULT_RECENT_TERMINAL_LIMIT = 10;
 const DEFAULT_ACTIVE_LIMIT = 50;
@@ -144,6 +144,7 @@ export function renderTasksContextForRun(input: RunTasksContextInput): TasksCont
   if (input.config?.tools?.experimental?.agentTasks === false) {
     return { rendered: "", activeCount: 0, terminalCount: 0 };
   }
-  // Owner key matches sessionKey today (same convention as the agent tool factory).
-  return renderTasksContext({ ownerKey: sessionKey });
+  // Single-agent install: all tasks share GLOBAL_OWNER_KEY regardless of which session created
+  // them. The agent uses requesterSessionKey on each rendered line to decide relevance.
+  return renderTasksContext({ ownerKey: GLOBAL_OWNER_KEY });
 }

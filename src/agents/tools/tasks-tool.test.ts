@@ -312,7 +312,9 @@ describe("tasks agent tool", () => {
     expect(payload.status).toBe("not_found");
   });
 
-  it("get returns ownership_mismatch when the task belongs to a different owner", async () => {
+  it("get reads tasks created under a different ownerKey (global-owner convention)", async () => {
+    // Pre-global-owner this returned status: "ownership_mismatch". Tasks are now visible
+    // across owners on this install — see GLOBAL_OWNER_KEY in task-registry.types.ts.
     const otherTool = buildTool({ ownerKey: "agent:other:other", sessionKey: "agent:other:other" });
     const other = parsePayload(
       await otherTool.execute("om-1", { action: "create", task: "theirs", label: "theirs" }),
@@ -321,7 +323,8 @@ describe("tasks agent tool", () => {
     const payload = parsePayload(
       await myTool.execute("om-2", { action: "get", task_id: other.task_id as string }),
     );
-    expect(payload.status).toBe("ownership_mismatch");
+    expect(payload.status).toBe("ok");
+    expect((payload.task as { task_id: string }).task_id).toBe(other.task_id);
   });
 });
 

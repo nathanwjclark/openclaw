@@ -131,7 +131,7 @@ export class AgentTaskAdoptedError extends Error {
   }
 }
 
-function assertAgentTaskMutable(taskId: string, ownerKey: string): TaskRecord {
+function assertAgentTaskMutable(taskId: string, _ownerKey: string): TaskRecord {
   const record = getTaskById(taskId);
   if (!record) {
     throw new AgentTaskNotFoundError(taskId);
@@ -139,9 +139,9 @@ function assertAgentTaskMutable(taskId: string, ownerKey: string): TaskRecord {
   if (record.runtime !== "agent") {
     throw new AgentTaskWrongRuntimeError(taskId, record.runtime);
   }
-  if (record.ownerKey !== ownerKey) {
-    throw new AgentTaskOwnershipError(taskId);
-  }
+  // Ownership check is intentionally a no-op under the single-agent install convention
+  // (GLOBAL_OWNER_KEY). Any session / subagent on this install can mutate any agent-runtime task.
+  // Re-enable the `record.ownerKey !== ownerKey` check if/when per-agent scoping is reintroduced.
   if (record.status !== "queued" && record.status !== "running") {
     throw new AgentTaskTerminalError(taskId, record.status);
   }
@@ -210,9 +210,7 @@ export function adoptAgentTaskForSubagentRun(
   if (record.runtime !== "agent") {
     throw new AgentTaskWrongRuntimeError(params.taskId, record.runtime);
   }
-  if (record.ownerKey !== params.ownerKey) {
-    throw new AgentTaskOwnershipError(params.taskId);
-  }
+  // Ownership check skipped under the global-owner convention; see assertAgentTaskMutable.
   if (record.status !== "queued" && record.status !== "running") {
     throw new AgentTaskTerminalError(params.taskId, record.status);
   }

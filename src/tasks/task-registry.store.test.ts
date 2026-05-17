@@ -271,7 +271,9 @@ describe("task-registry store runtime", () => {
     const restored = findTaskByRunId("run-requester-session-restore");
     expect(restored?.taskId).toBe(created.taskId);
     expect(restored?.requesterSessionKey).toBe("agent:main:workspace:channel:C1234567890");
-    expect(restored?.ownerKey).toBe("agent:main:main");
+    // Global-owner migration rewrites every ownerKey to "global" on store open. The original
+    // owner ("agent:main:main") survives as requesterSessionKey for relevance filtering.
+    expect(restored?.ownerKey).toBe("global");
     expect(restored?.childSessionKey).toBe("agent:main:workspace:channel:C1234567890");
   });
 
@@ -443,7 +445,9 @@ describe("task-registry store runtime", () => {
 
         const restored = findTaskByRunId("legacy-cron-run");
         expect(restored?.taskId).toBe("legacy-cron-task");
-        expect(restored?.ownerKey).toBe("system:cron:nightly-digest");
+        // Pre-global-owner this was "system:cron:nightly-digest" (legacy column migration's
+        // synthesized key). The global-owner migration now collapses this to "global".
+        expect(restored?.ownerKey).toBe("global");
         expect(restored?.scopeKind).toBe("system");
         expect(restored?.deliveryStatus).toBe("not_applicable");
         expect(restored?.notifyPolicy).toBe("silent");
@@ -534,6 +538,165 @@ describe("task-registry store runtime", () => {
         expect(restored?.taskId).toBe("legacy-session-task");
         expect(restored?.status).toBe("lost");
         expect(restored?.error).toBe("session missing");
+      },
+    );
+  });
+
+  it("rewrites all owner_key values to 'global' on store open (global-owner migration)", async () => {
+    await withOpenClawTestState(
+      { layout: "state-only", prefix: "openclaw-task-store-global-owner-" },
+      async () => {
+        const sqlitePath = resolveTaskRegistrySqlitePath(process.env);
+        mkdirSync(path.dirname(sqlitePath), { recursive: true });
+        const { DatabaseSync } = requireNodeSqlite();
+        const db = new DatabaseSync(sqlitePath);
+        db.exec(`
+          CREATE TABLE task_runs (
+            task_id TEXT PRIMARY KEY,
+            runtime TEXT NOT NULL,
+            source_id TEXT,
+            requester_session_key TEXT,
+            owner_key TEXT NOT NULL,
+            scope_kind TEXT NOT NULL DEFAULT 'session',
+            run_id TEXT,
+            task TEXT NOT NULL,
+            status TEXT NOT NULL,
+            delivery_status TEXT NOT NULL,
+            notify_policy TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            last_event_at INTEGER
+          );
+        `);
+        db.exec(`
+          CREATE TABLE task_delivery_state (
+            task_id TEXT PRIMARY KEY,
+            requester_origin_json TEXT,
+            last_notified_event_at INTEGER
+          );
+        `);
+        const insert = db.prepare(`
+          INSERT INTO task_runs (
+            task_id, runtime, requester_session_key, owner_key, scope_kind,
+            run_id, task, status, delivery_status, notify_policy,
+            created_at, last_event_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        insert.run(
+          "t-channel",
+          "agent",
+          "slack:channel:C0XYZ",
+          "slack:channel:C0XYZ",
+          "session",
+          null,
+          "from channel",
+          "queued",
+          "not_applicable",
+          "silent",
+          100,
+          100,
+        );
+        insert.run(
+          "t-thread",
+          "agent",
+          "slack:channel:C0XYZ:thread:T123",
+          "slack:channel:C0XYZ:thread:T123",
+          "session",
+          null,
+          "from thread",
+          "queued",
+          "not_applicable",
+          "silent",
+          101,
+          101,
+        );
+        insert.run(
+          "t-subagent",
+          "subagent",
+          "agent:main:main",
+          "agent:main:main",
+          "session",
+          "run-sa",
+          "subagent task",
+          "running",
+          "pending",
+          "done_only",
+          102,
+          102,
+        );
+        db.close();
+
+        resetTaskRegistryForTests({ persist: false });
+        // Trigger registry hydration → opens the SQLite store → runs ensureSchema → migration.
+        findTaskByRunId("__trigger_open__");
+
+        const verify = new DatabaseSync(sqlitePath);
+        const rows = verify
+          .prepare(`SELECT task_id, owner_key FROM task_runs ORDER BY task_id`)
+          .all() as Array<{ task_id: string; owner_key: string }>;
+        verify.close();
+        expect(rows).toHaveLength(3);
+        for (const row of rows) {
+          expect(row.owner_key).toBe("global");
+        }
+      },
+    );
+  });
+
+  it("global-owner migration is idempotent on re-open", async () => {
+    await withOpenClawTestState(
+      { layout: "state-only", prefix: "openclaw-task-store-global-owner-idem-" },
+      async () => {
+        const sqlitePath = resolveTaskRegistrySqlitePath(process.env);
+        mkdirSync(path.dirname(sqlitePath), { recursive: true });
+        const { DatabaseSync } = requireNodeSqlite();
+        const db = new DatabaseSync(sqlitePath);
+        db.exec(`
+          CREATE TABLE task_runs (
+            task_id TEXT PRIMARY KEY,
+            runtime TEXT NOT NULL,
+            source_id TEXT,
+            requester_session_key TEXT,
+            owner_key TEXT NOT NULL,
+            scope_kind TEXT NOT NULL DEFAULT 'session',
+            run_id TEXT,
+            task TEXT NOT NULL,
+            status TEXT NOT NULL,
+            delivery_status TEXT NOT NULL,
+            notify_policy TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            last_event_at INTEGER
+          );
+        `);
+        db.exec(`
+          CREATE TABLE task_delivery_state (
+            task_id TEXT PRIMARY KEY,
+            requester_origin_json TEXT,
+            last_notified_event_at INTEGER
+          );
+        `);
+        db.prepare(`
+          INSERT INTO task_runs (
+            task_id, runtime, requester_session_key, owner_key, scope_kind,
+            run_id, task, status, delivery_status, notify_policy,
+            created_at, last_event_at
+          ) VALUES ('t1', 'agent', 's1', 'global', 'session', NULL, 'already-global',
+                    'queued', 'not_applicable', 'silent', 100, 100)
+        `).run();
+        db.close();
+
+        // First open: migration runs (no-op since already 'global').
+        resetTaskRegistryForTests({ persist: false });
+        findTaskByRunId("__open1__");
+        // Second open: migration runs again (still no-op).
+        resetTaskRegistryForTests({ persist: false });
+        findTaskByRunId("__open2__");
+
+        const verify = new DatabaseSync(sqlitePath);
+        const row = verify.prepare(`SELECT owner_key FROM task_runs WHERE task_id = 't1'`).get() as
+          | { owner_key: string }
+          | undefined;
+        verify.close();
+        expect(row?.owner_key).toBe("global");
       },
     );
   });

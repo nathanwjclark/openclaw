@@ -31,18 +31,18 @@ The active task list is auto-injected into your context at the start of every tu
 USE THIS TOOL when you need to track work that should persist beyond the current turn — open follow-ups, things the user can review in 'openclaw tasks list', or items a future session should pick up. Do NOT use it for within-session step tracking — use 'update_plan' for that.
 
 ACTIONS:
-- create(task, [label], [kind], [parent_task_id], [parent_flow_id], [extrapolation_graph_id], [extrapolation_node_id]): create a new queued task scoped to this session's owner. 'task' is the description (required). 'label' is a short title. 'kind' is a free-form category. Returns { task_id, task_status: "queued" }.
-- update_progress(task_id, progress_summary): write a short progress note onto an existing task you created. Moves status from 'queued' to 'running' on the first call. Returns { task_id, task_status }.
-- complete(task_id, outcome, [terminal_summary]): mark a task terminal. 'outcome' is "succeeded" if you finished the work, "blocked" if you're stopping early. 'terminal_summary' is a short closing note (optional but recommended). Returns { task_id, task_status, terminal_outcome }.
-- list_mine([status], [include_terminal], [limit]): list tasks for this owner across all runtimes. By default returns active (queued, running) plus recent terminal. Pass status="queued" etc. to filter, include_terminal=false to drop terminal entirely, limit to cap the response. Use this to orient if the auto-injected block is missing context you need.
+- create(task, [label], [kind], [parent_task_id], [parent_flow_id], [extrapolation_graph_id], [extrapolation_node_id]): create a new queued task. 'task' is the description (required). 'label' is a short title. 'kind' is a free-form category. Returns { task_id, task_status: "queued" }.
+- update_progress(task_id, progress_summary): write a short progress note onto an existing agent task. Moves status from 'queued' to 'running' on the first call. Returns { task_id, task_status }.
+- complete(task_id, outcome, [terminal_summary]): mark an agent task terminal. 'outcome' is "succeeded" if you finished the work, "blocked" if you're stopping early. 'terminal_summary' is a short closing note (optional but recommended). Returns { task_id, task_status, terminal_outcome }.
+- list_mine([status], [include_terminal], [limit]): list all tasks visible to this install, across runtimes and sessions. By default returns active (queued, running) plus recent terminal. Pass status="queued" etc. to filter, include_terminal=false to drop terminal entirely, limit to cap the response. Use this to orient if the auto-injected block is missing context you need.
 - get(task_id): fetch full detail on one task (progress/terminal summaries, linkage). Returns { task: { ... } } or { status: "not_found" }.
 
 Notes:
 - Tasks start as 'queued'. Call update_progress when you start work, complete when you're done.
 - Tasks live indefinitely once terminal — they're a permanent audit log, not garbage-collected.
-- Identical active (owner, task, label) creates dedupe — repeating returns the existing task_id.
-- There is a rate cap on active agent-created tasks per owner. Complete tasks before creating more.
-- You can mutate tasks scoped to your own owner with runtime='agent'. Tasks from other runtimes (subagent, cron, etc.) are read-only via this tool. Users cancel tasks themselves.`;
+- Identical active (task, label) creates dedupe — repeating returns the existing task_id.
+- There is a rate cap on active agent-created tasks. Complete tasks before creating more.
+- Scope is global on this install: tasks are visible / mutable regardless of which Slack channel, thread, or subagent created them. Use 'session_key' on each record to judge whether a task originated in the session you're currently driving. Tasks from non-agent runtimes (subagent, cron, etc.) remain read-only via this tool — their own subsystems own writes. Users cancel tasks themselves.`;
 
 const TasksToolSchema = Type.Object({
   action: Type.Union([
@@ -399,19 +399,13 @@ function handleListMine(params: Record<string, unknown>, opts: CreateTasksToolOp
   });
 }
 
-function handleGet(params: Record<string, unknown>, opts: CreateTasksToolOptions): unknown {
+function handleGet(params: Record<string, unknown>, _opts: CreateTasksToolOptions): unknown {
   const taskId = readStringParam(params, "task_id", { required: true });
   const record = getTaskById(taskId);
   if (!record) {
     return jsonResult({ status: "not_found", task_id: taskId });
   }
-  if (record.ownerKey !== opts.ownerKey) {
-    return jsonResult({
-      status: "ownership_mismatch",
-      task_id: taskId,
-      message: `task ${taskId} is not owned by this session`,
-    });
-  }
+  // Reads are ungated under the global-owner convention (see GLOBAL_OWNER_KEY).
   return jsonResult({ status: "ok", task: projectTaskForAgent(record) });
 }
 
