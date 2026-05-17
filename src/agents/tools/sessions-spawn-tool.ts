@@ -233,6 +233,12 @@ function createSessionsSpawnToolSchema(params: {
           "Source extrapolation node id whose forward branch is being promoted by this spawn. Stamped onto the task row and used to mark the node as promoted in the graph.",
       }),
     ),
+    task_id: Type.Optional(
+      Type.String({
+        description:
+          "Adopt an existing agent-runtime task (from `tasks` tool) instead of creating a fresh task record. The spawned subagent run becomes the executor for that task: the task transitions to 'running' and its lifecycle is driven by the subagent. Use this when you've already noted the work in the backlog and now want to dispatch it.",
+      }),
+    ),
     ...(params.acpAvailable
       ? {
           resumeSessionId: Type.Optional(
@@ -325,6 +331,7 @@ export function createSessionsSpawnTool(
       const lightContext = params.lightContext === true;
       const extrapolationGraphId = readStringParam(params, "extrapolation_graph_id");
       const extrapolationNodeId = readStringParam(params, "extrapolation_node_id");
+      const adoptTaskId = readStringParam(params, "task_id");
       if (
         (extrapolationGraphId && !extrapolationNodeId) ||
         (extrapolationNodeId && !extrapolationGraphId)
@@ -487,6 +494,7 @@ export function createSessionsSpawnTool(
               spawnMode: trackedSpawnMode,
               ...(extrapolationGraphId ? { extrapolationGraphId } : {}),
               ...(extrapolationNodeId ? { extrapolationNodeId } : {}),
+              ...(adoptTaskId ? { adoptTaskId } : {}),
             });
             if (extrapolationGraphId && extrapolationNodeId) {
               const { promoteExtrapolationNodeAfterSpawn } =
@@ -539,6 +547,7 @@ export function createSessionsSpawnTool(
               : undefined,
           ...(extrapolationGraphId ? { extrapolationGraphId } : {}),
           ...(extrapolationNodeId ? { extrapolationNodeId } : {}),
+          ...(adoptTaskId ? { adoptTaskId } : {}),
         },
         {
           agentSessionKey: opts?.agentSessionKey,

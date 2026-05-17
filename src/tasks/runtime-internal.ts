@@ -12,6 +12,7 @@ export {
   listTasksForFlowId,
   listTasksForOwnerKey,
   linkTaskToFlowById,
+  attachSubagentRunToTaskById,
   markTaskLostById,
   markTaskRunningById,
   markTaskRunningByRunId,

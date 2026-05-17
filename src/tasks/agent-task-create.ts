@@ -1,4 +1,5 @@
 import {
+  attachSubagentRunToTaskById,
   createTaskRecord,
   getTaskById,
   listTasksForOwnerKey,
@@ -117,6 +118,19 @@ export class AgentTaskTerminalError extends Error {
   }
 }
 
+export class AgentTaskAdoptedError extends Error {
+  readonly code = "agent_task_adopted";
+  constructor(
+    public readonly taskId: string,
+    public readonly childSessionKey: string,
+  ) {
+    super(
+      `agent task ${taskId} is being executed by subagent ${childSessionKey}; its lifecycle is driven by the subagent. Cancel the subagent to terminate the task.`,
+    );
+    this.name = "AgentTaskAdoptedError";
+  }
+}
+
 function assertAgentTaskMutable(taskId: string, ownerKey: string): TaskRecord {
   const record = getTaskById(taskId);
   if (!record) {
@@ -130,6 +144,9 @@ function assertAgentTaskMutable(taskId: string, ownerKey: string): TaskRecord {
   }
   if (record.status !== "queued" && record.status !== "running") {
     throw new AgentTaskTerminalError(taskId, record.status);
+  }
+  if (record.childSessionKey) {
+    throw new AgentTaskAdoptedError(taskId, record.childSessionKey);
   }
   return record;
 }
@@ -167,6 +184,53 @@ export type CompleteAgentTaskParams = {
   outcome: TaskTerminalOutcome;
   terminalSummary?: string;
 };
+
+export type AdoptAgentTaskForSubagentRunParams = {
+  taskId: string;
+  ownerKey: string;
+  runId: string;
+  childSessionKey: string;
+  label?: string;
+  startedAt?: number;
+};
+
+/**
+ * Attach a spawned subagent run to an existing agent-runtime task. The task transitions to
+ * 'running' and gains childSessionKey + runId, which routes subagent termination back to it
+ * via the standard finalizeTaskRunByRunId path. After adoption, the agent tool can no longer
+ * mutate the task — the subagent owns the lifecycle until it completes (or is cancelled).
+ */
+export function adoptAgentTaskForSubagentRun(
+  params: AdoptAgentTaskForSubagentRunParams,
+): TaskRecord {
+  const record = getTaskById(params.taskId);
+  if (!record) {
+    throw new AgentTaskNotFoundError(params.taskId);
+  }
+  if (record.runtime !== "agent") {
+    throw new AgentTaskWrongRuntimeError(params.taskId, record.runtime);
+  }
+  if (record.ownerKey !== params.ownerKey) {
+    throw new AgentTaskOwnershipError(params.taskId);
+  }
+  if (record.status !== "queued" && record.status !== "running") {
+    throw new AgentTaskTerminalError(params.taskId, record.status);
+  }
+  if (record.childSessionKey) {
+    throw new AgentTaskAdoptedError(params.taskId, record.childSessionKey);
+  }
+  const next = attachSubagentRunToTaskById({
+    taskId: params.taskId,
+    childSessionKey: params.childSessionKey,
+    runId: params.runId,
+    ...(params.label !== undefined ? { label: params.label } : {}),
+    ...(params.startedAt !== undefined ? { startedAt: params.startedAt } : {}),
+  });
+  if (!next) {
+    throw new AgentTaskNotFoundError(params.taskId);
+  }
+  return next;
+}
 
 export function completeAgentTask(params: CompleteAgentTaskParams): TaskRecord {
   assertAgentTaskMutable(params.taskId, params.ownerKey);
