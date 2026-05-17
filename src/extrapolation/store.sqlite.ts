@@ -219,6 +219,10 @@ function ensureSchema(db: DatabaseSync) {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_sdf_content_hash_session
     ON session_durable_facts(session_key, content_hash) WHERE revoked_at IS NULL;
   `);
+  // Collapse all extrapolation ownership to the global single-agent owner key. Idempotent.
+  // See GLOBAL_OWNER_KEY in src/tasks/task-registry.types.ts for rationale.
+  db.exec(`UPDATE extrapolation_graphs SET owner_key = 'global' WHERE owner_key <> 'global';`);
+  db.exec(`UPDATE session_durable_facts SET owner_key = 'global' WHERE owner_key <> 'global';`);
 }
 
 function createStatements(db: DatabaseSync): Statements {

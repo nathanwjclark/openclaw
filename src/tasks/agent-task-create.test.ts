@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   AgentTaskAdoptedError,
   AgentTaskNotFoundError,
-  AgentTaskOwnershipError,
   AgentTaskRateLimitError,
   AgentTaskTerminalError,
   AgentTaskWrongRuntimeError,
@@ -202,20 +201,23 @@ describe("updateAgentTaskProgress", () => {
     ).toThrow(AgentTaskNotFoundError);
   });
 
-  it("throws AgentTaskOwnershipError when a different owner attempts to update", () => {
+  it("under the global-owner convention, a different ownerKey can update an existing task", () => {
+    // Pre-global-owner this threw AgentTaskOwnershipError. Now any session on this install
+    // can mutate any agent-runtime task — see GLOBAL_OWNER_KEY in task-registry.types.ts.
     const created = createAgentTaskRecord({
       ownerKey: OWNER,
       sessionKey: SESSION,
       task: "Owned by main",
       label: "p-2",
     });
-    expect(() =>
-      updateAgentTaskProgress({
-        taskId: created.taskId,
-        ownerKey: "agent:other:other",
-        progressSummary: "no permission",
-      }),
-    ).toThrow(AgentTaskOwnershipError);
+    const next = updateAgentTaskProgress({
+      taskId: created.taskId,
+      ownerKey: "agent:other:other",
+      progressSummary: "cross-session update",
+    });
+    expect(next.taskId).toBe(created.taskId);
+    expect(next.status).toBe("running");
+    expect(next.progressSummary).toBe("cross-session update");
   });
 
   it("throws AgentTaskWrongRuntimeError when target task is not agent-runtime", () => {
@@ -396,21 +398,24 @@ describe("adoptAgentTaskForSubagentRun", () => {
     expect(final?.cleanupAfter).toBeUndefined();
   });
 
-  it("rejects adoption when the task is owned by a different session", () => {
+  it("under the global-owner convention, adoption succeeds across ownerKeys", () => {
+    // Pre-global-owner this threw AgentTaskOwnershipError. A subagent spawned from a
+    // different session can now adopt any pending agent-runtime task on this install.
     const created = createAgentTaskRecord({
       ownerKey: OWNER,
       sessionKey: SESSION,
       task: "Mine",
       label: "owner-check",
     });
-    expect(() =>
-      adoptAgentTaskForSubagentRun({
-        taskId: created.taskId,
-        ownerKey: "agent:other:other",
-        runId: "run-x",
-        childSessionKey: "agent:worker:subagent:x",
-      }),
-    ).toThrow(AgentTaskOwnershipError);
+    const adopted = adoptAgentTaskForSubagentRun({
+      taskId: created.taskId,
+      ownerKey: "agent:other:other",
+      runId: "run-x",
+      childSessionKey: "agent:worker:subagent:x",
+    });
+    expect(adopted.taskId).toBe(created.taskId);
+    expect(adopted.childSessionKey).toBe("agent:worker:subagent:x");
+    expect(adopted.runId).toBe("run-x");
   });
 
   it("rejects adoption when the task is non-agent runtime", () => {

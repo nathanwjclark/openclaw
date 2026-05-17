@@ -9,6 +9,7 @@ import {
 } from "./agent-task-create.js";
 import { renderTasksContext, renderTasksContextForRun } from "./context-injection.js";
 import { createTaskRecord, resetTaskRegistryForTests } from "./runtime-internal.js";
+import { GLOBAL_OWNER_KEY } from "./task-registry.types.js";
 
 const ORIGINAL_STATE_DIR = process.env.OPENCLAW_STATE_DIR;
 let stateDir: string;
@@ -133,9 +134,14 @@ describe("renderTasksContext", () => {
 
 describe("renderTasksContextForRun", () => {
   it("returns empty when the feature flag is explicitly disabled", () => {
-    createAgentTaskRecord({ ownerKey: OWNER, sessionKey: SESSION, task: "x", label: "x" });
+    createAgentTaskRecord({
+      ownerKey: GLOBAL_OWNER_KEY,
+      sessionKey: SESSION,
+      task: "x",
+      label: "x",
+    });
     const result = renderTasksContextForRun({
-      sessionKey: OWNER,
+      sessionKey: SESSION,
       agentId: "main",
       config: { tools: { experimental: { agentTasks: false } } },
     });
@@ -143,18 +149,28 @@ describe("renderTasksContextForRun", () => {
   });
 
   it("renders by default (flag absent) since the feature is on by default", () => {
-    createAgentTaskRecord({ ownerKey: OWNER, sessionKey: SESSION, task: "x", label: "x" });
+    createAgentTaskRecord({
+      ownerKey: GLOBAL_OWNER_KEY,
+      sessionKey: SESSION,
+      task: "x",
+      label: "x",
+    });
     const result = renderTasksContextForRun({
-      sessionKey: OWNER,
+      sessionKey: SESSION,
       agentId: "main",
     });
     expect(result.rendered).toContain("## Open tasks");
   });
 
   it("renders when the flag is explicitly enabled", () => {
-    createAgentTaskRecord({ ownerKey: OWNER, sessionKey: SESSION, task: "x", label: "x" });
+    createAgentTaskRecord({
+      ownerKey: GLOBAL_OWNER_KEY,
+      sessionKey: SESSION,
+      task: "x",
+      label: "x",
+    });
     const result = renderTasksContextForRun({
-      sessionKey: OWNER,
+      sessionKey: SESSION,
       agentId: "main",
       config: { tools: { experimental: { agentTasks: true } } },
     });
@@ -162,11 +178,43 @@ describe("renderTasksContextForRun", () => {
   });
 
   it("returns empty when sessionKey is missing", () => {
-    createAgentTaskRecord({ ownerKey: OWNER, sessionKey: SESSION, task: "x", label: "x" });
+    createAgentTaskRecord({
+      ownerKey: GLOBAL_OWNER_KEY,
+      sessionKey: SESSION,
+      task: "x",
+      label: "x",
+    });
     const result = renderTasksContextForRun({
       agentId: "main",
       config: { tools: { experimental: { agentTasks: true } } },
     });
     expect(result.rendered).toBe("");
+  });
+
+  it("renders the same tasks regardless of which sessionKey is driving the run", () => {
+    // Global-owner convention: tasks created under any session are visible to every run.
+    createAgentTaskRecord({
+      ownerKey: GLOBAL_OWNER_KEY,
+      sessionKey: "slack:channel:C0XYZ",
+      task: "channel task",
+      label: "ch",
+    });
+    createAgentTaskRecord({
+      ownerKey: GLOBAL_OWNER_KEY,
+      sessionKey: "slack:channel:C0XYZ:thread:T123",
+      task: "thread task",
+      label: "th",
+    });
+    const fromChannel = renderTasksContextForRun({
+      sessionKey: "slack:channel:C0XYZ",
+      agentId: "main",
+    });
+    const fromThread = renderTasksContextForRun({
+      sessionKey: "slack:channel:C0XYZ:thread:T123",
+      agentId: "main",
+    });
+    expect(fromChannel.activeCount).toBe(2);
+    expect(fromThread.activeCount).toBe(2);
+    expect(fromChannel.rendered).toBe(fromThread.rendered);
   });
 });

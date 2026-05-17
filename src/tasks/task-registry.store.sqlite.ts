@@ -399,6 +399,12 @@ function migrateLegacyOwnerColumns(db: DatabaseSync) {
   `);
 }
 
+// Collapse all task ownership to the global single-agent owner key. Idempotent: the WHERE clause
+// makes re-runs a no-op once everything is migrated. See GLOBAL_OWNER_KEY for rationale.
+function migrateOwnerKeysToGlobal(db: DatabaseSync) {
+  db.exec(`UPDATE task_runs SET owner_key = 'global' WHERE owner_key <> 'global';`);
+}
+
 function ensureSchema(db: DatabaseSync) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS task_runs (
@@ -445,6 +451,7 @@ function ensureSchema(db: DatabaseSync) {
   if (!hasTaskRunsColumn(db, "extrapolation_node_id")) {
     db.exec(`ALTER TABLE task_runs ADD COLUMN extrapolation_node_id TEXT;`);
   }
+  migrateOwnerKeysToGlobal(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS task_delivery_state (
       task_id TEXT PRIMARY KEY,

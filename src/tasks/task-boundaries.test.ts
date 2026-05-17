@@ -19,6 +19,8 @@ const RAW_TASK_MUTATORS = [
 ] as const;
 
 const RAW_TASK_MUTATOR_ALLOWED_CALLERS = new Set([
+  // Agent-runtime task lifecycle helper module — tasks-internal, sits alongside task-registry.
+  "tasks/agent-task-create.ts",
   "tasks/task-executor.ts",
   "tasks/task-registry.ts",
   "tasks/task-registry.maintenance.ts",
