@@ -1341,6 +1341,22 @@ export function setTaskTimingById(params: {
   return updateTask(params.taskId, patch);
 }
 
+export function markTaskRunningById(params: {
+  taskId: string;
+  startedAt?: number;
+  lastEventAt?: number;
+}): TaskRecord | null {
+  ensureTaskRegistryReady();
+  const patch: Partial<TaskRecord> = { status: "running" };
+  if (params.startedAt != null) {
+    patch.startedAt = params.startedAt;
+  }
+  if (params.lastEventAt != null) {
+    patch.lastEventAt = params.lastEventAt;
+  }
+  return updateTask(params.taskId, patch);
+}
+
 export function setTaskCleanupAfterById(params: {
   taskId: string;
   cleanupAfter: number;

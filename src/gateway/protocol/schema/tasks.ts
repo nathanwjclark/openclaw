@@ -119,3 +119,41 @@ export const TasksCreateResultSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+export const TaskTerminalOutcomeSchema = Type.Union([
+  Type.Literal("succeeded"),
+  Type.Literal("blocked"),
+]);
+
+export const TasksUpdateProgressParamsSchema = Type.Object(
+  {
+    taskId: NonEmptyString,
+    ownerKey: NonEmptyString,
+    progressSummary: NonEmptyString,
+  },
+  { additionalProperties: false },
+);
+
+export const TasksUpdateProgressResultSchema = Type.Object(
+  {
+    task: TaskSummarySchema,
+  },
+  { additionalProperties: false },
+);
+
+export const TasksCompleteParamsSchema = Type.Object(
+  {
+    taskId: NonEmptyString,
+    ownerKey: NonEmptyString,
+    outcome: TaskTerminalOutcomeSchema,
+    terminalSummary: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+
+export const TasksCompleteResultSchema = Type.Object(
+  {
+    task: TaskSummarySchema,
+  },
+  { additionalProperties: false },
+);

@@ -92,6 +92,8 @@ export const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "tasks.list", scope: "operator.read" },
   { name: "tasks.get", scope: "operator.read" },
   { name: "tasks.create", scope: "operator.write" },
+  { name: "tasks.updateProgress", scope: "operator.write" },
+  { name: "tasks.complete", scope: "operator.write" },
   { name: "tasks.cancel", scope: "operator.write" },
   { name: "environments.list", scope: "operator.read" },
   { name: "environments.status", scope: "operator.read" },

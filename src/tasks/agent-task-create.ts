@@ -1,5 +1,12 @@
-import { createTaskRecord, listTasksForOwnerKey } from "./runtime-internal.js";
-import type { TaskNotifyPolicy, TaskRecord } from "./task-registry.types.js";
+import {
+  createTaskRecord,
+  getTaskById,
+  listTasksForOwnerKey,
+  markTaskRunningById,
+  markTaskTerminalById,
+  setTaskProgressById,
+} from "./runtime-internal.js";
+import type { TaskNotifyPolicy, TaskRecord, TaskTerminalOutcome } from "./task-registry.types.js";
 
 export const DEFAULT_MAX_ACTIVE_AGENT_TASKS = 25;
 
@@ -68,6 +75,115 @@ function findActiveDuplicate(params: {
     return candidate;
   }
   return undefined;
+}
+
+export class AgentTaskNotFoundError extends Error {
+  readonly code = "agent_task_not_found";
+  constructor(public readonly taskId: string) {
+    super(`agent task ${taskId} not found`);
+    this.name = "AgentTaskNotFoundError";
+  }
+}
+
+export class AgentTaskOwnershipError extends Error {
+  readonly code = "agent_task_ownership_mismatch";
+  constructor(public readonly taskId: string) {
+    super(`agent task ${taskId} is owned by a different session and cannot be modified`);
+    this.name = "AgentTaskOwnershipError";
+  }
+}
+
+export class AgentTaskWrongRuntimeError extends Error {
+  readonly code = "agent_task_wrong_runtime";
+  constructor(
+    public readonly taskId: string,
+    public readonly runtime: string,
+  ) {
+    super(
+      `task ${taskId} has runtime '${runtime}'; only 'agent' tasks may be updated via this surface`,
+    );
+    this.name = "AgentTaskWrongRuntimeError";
+  }
+}
+
+export class AgentTaskTerminalError extends Error {
+  readonly code = "agent_task_already_terminal";
+  constructor(
+    public readonly taskId: string,
+    public readonly status: string,
+  ) {
+    super(`agent task ${taskId} is already terminal (status='${status}') and cannot be modified`);
+    this.name = "AgentTaskTerminalError";
+  }
+}
+
+function assertAgentTaskMutable(taskId: string, ownerKey: string): TaskRecord {
+  const record = getTaskById(taskId);
+  if (!record) {
+    throw new AgentTaskNotFoundError(taskId);
+  }
+  if (record.runtime !== "agent") {
+    throw new AgentTaskWrongRuntimeError(taskId, record.runtime);
+  }
+  if (record.ownerKey !== ownerKey) {
+    throw new AgentTaskOwnershipError(taskId);
+  }
+  if (record.status !== "queued" && record.status !== "running") {
+    throw new AgentTaskTerminalError(taskId, record.status);
+  }
+  return record;
+}
+
+export type UpdateAgentTaskProgressParams = {
+  taskId: string;
+  ownerKey: string;
+  progressSummary: string;
+};
+
+export function updateAgentTaskProgress(params: UpdateAgentTaskProgressParams): TaskRecord {
+  const current = assertAgentTaskMutable(params.taskId, params.ownerKey);
+  const now = Date.now();
+  if (current.status === "queued") {
+    markTaskRunningById({
+      taskId: params.taskId,
+      ...(current.startedAt === undefined ? { startedAt: now } : {}),
+      lastEventAt: now,
+    });
+  }
+  const next = setTaskProgressById({
+    taskId: params.taskId,
+    progressSummary: params.progressSummary,
+    lastEventAt: now,
+  });
+  if (!next) {
+    throw new AgentTaskNotFoundError(params.taskId);
+  }
+  return next;
+}
+
+export type CompleteAgentTaskParams = {
+  taskId: string;
+  ownerKey: string;
+  outcome: TaskTerminalOutcome;
+  terminalSummary?: string;
+};
+
+export function completeAgentTask(params: CompleteAgentTaskParams): TaskRecord {
+  assertAgentTaskMutable(params.taskId, params.ownerKey);
+  const now = Date.now();
+  const status = params.outcome === "succeeded" ? "succeeded" : "failed";
+  const next = markTaskTerminalById({
+    taskId: params.taskId,
+    status,
+    endedAt: now,
+    lastEventAt: now,
+    terminalOutcome: params.outcome,
+    ...(params.terminalSummary !== undefined ? { terminalSummary: params.terminalSummary } : {}),
+  });
+  if (!next) {
+    throw new AgentTaskNotFoundError(params.taskId);
+  }
+  return next;
 }
 
 export function createAgentTaskRecord(

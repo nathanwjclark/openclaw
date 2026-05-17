@@ -347,10 +347,18 @@ import {
   TasksGetParamsSchema,
   type TasksGetResult,
   TasksGetResultSchema,
+  type TasksCompleteParams,
+  TasksCompleteParamsSchema,
+  type TasksCompleteResult,
+  TasksCompleteResultSchema,
   type TasksCreateParams,
   TasksCreateParamsSchema,
   type TasksCreateResult,
   TasksCreateResultSchema,
+  type TasksUpdateProgressParams,
+  TasksUpdateProgressParamsSchema,
+  type TasksUpdateProgressResult,
+  TasksUpdateProgressResultSchema,
   type TasksListParams,
   TasksListParamsSchema,
   type TasksListResult,
@@ -644,6 +652,11 @@ export const validateTasksListParams = lazyCompile<TasksListParams>(TasksListPar
 export const validateTasksGetParams = lazyCompile<TasksGetParams>(TasksGetParamsSchema);
 export const validateTasksCancelParams = lazyCompile<TasksCancelParams>(TasksCancelParamsSchema);
 export const validateTasksCreateParams = lazyCompile<TasksCreateParams>(TasksCreateParamsSchema);
+export const validateTasksUpdateProgressParams = lazyCompile<TasksUpdateProgressParams>(
+  TasksUpdateProgressParamsSchema,
+);
+export const validateTasksCompleteParams =
+  lazyCompile<TasksCompleteParams>(TasksCompleteParamsSchema);
 export const validateConfigGetParams = lazyCompile<ConfigGetParams>(ConfigGetParamsSchema);
 export const validateConfigSetParams = lazyCompile<ConfigSetParams>(ConfigSetParamsSchema);
 export const validateConfigApplyParams = lazyCompile<ConfigApplyParams>(ConfigApplyParamsSchema);
@@ -933,6 +946,10 @@ export {
   TasksCancelResultSchema,
   TasksCreateParamsSchema,
   TasksCreateResultSchema,
+  TasksUpdateProgressParamsSchema,
+  TasksUpdateProgressResultSchema,
+  TasksCompleteParamsSchema,
+  TasksCompleteResultSchema,
   ConfigGetParamsSchema,
   ConfigSetParamsSchema,
   ConfigApplyParamsSchema,
@@ -1201,6 +1218,10 @@ export type {
   TasksCancelResult,
   TasksCreateParams,
   TasksCreateResult,
+  TasksUpdateProgressParams,
+  TasksUpdateProgressResult,
+  TasksCompleteParams,
+  TasksCompleteResult,
   CronJob,
   CronListParams,
   CronStatusParams,

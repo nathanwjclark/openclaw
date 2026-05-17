@@ -13,6 +13,7 @@ export {
   listTasksForOwnerKey,
   linkTaskToFlowById,
   markTaskLostById,
+  markTaskRunningById,
   markTaskRunningByRunId,
   markTaskTerminalById,
   maybeDeliverTaskTerminalUpdate,
@@ -25,6 +26,8 @@ export {
   setTaskRegistryControlRuntimeForTests,
   setTaskRegistryDeliveryRuntimeForTests,
   setTaskCleanupAfterById,
+  setTaskProgressById,
+  setTaskTimingById,
   setTaskRunDeliveryStatusByRunId,
   updateTaskNotifyPolicyById,
 } from "./task-registry.js";

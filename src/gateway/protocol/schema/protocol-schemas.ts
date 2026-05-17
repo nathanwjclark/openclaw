@@ -254,12 +254,16 @@ import { PresenceEntrySchema, SnapshotSchema, StateVersionSchema } from "./snaps
 import {
   TasksCancelParamsSchema,
   TasksCancelResultSchema,
+  TasksCompleteParamsSchema,
+  TasksCompleteResultSchema,
   TasksCreateParamsSchema,
   TasksCreateResultSchema,
   TasksGetParamsSchema,
   TasksGetResultSchema,
   TasksListParamsSchema,
   TasksListResultSchema,
+  TasksUpdateProgressParamsSchema,
+  TasksUpdateProgressResultSchema,
   TaskSummarySchema,
 } from "./tasks.js";
 import {
@@ -362,6 +366,10 @@ export const ProtocolSchemas = {
   TasksCancelResult: TasksCancelResultSchema,
   TasksCreateParams: TasksCreateParamsSchema,
   TasksCreateResult: TasksCreateResultSchema,
+  TasksUpdateProgressParams: TasksUpdateProgressParamsSchema,
+  TasksUpdateProgressResult: TasksUpdateProgressResultSchema,
+  TasksCompleteParams: TasksCompleteParamsSchema,
+  TasksCompleteResult: TasksCompleteResultSchema,
   ConfigGetParams: ConfigGetParamsSchema,
   ConfigSetParams: ConfigSetParamsSchema,
   ConfigApplyParams: ConfigApplyParamsSchema,

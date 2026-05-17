@@ -1,6 +1,15 @@
 import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { normalizeOptionalString } from "../../shared/string-coerce.js";
-import { AgentTaskRateLimitError, createAgentTaskRecord } from "../../tasks/agent-task-create.js";
+import {
+  AgentTaskNotFoundError,
+  AgentTaskOwnershipError,
+  AgentTaskRateLimitError,
+  AgentTaskTerminalError,
+  AgentTaskWrongRuntimeError,
+  completeAgentTask,
+  createAgentTaskRecord,
+  updateAgentTaskProgress,
+} from "../../tasks/agent-task-create.js";
 import { cancelDetachedTaskRunById } from "../../tasks/detached-task-runtime.js";
 import { getTaskById, listTaskRecords } from "../../tasks/runtime-internal.js";
 import type { TaskRecord, TaskStatus } from "../../tasks/task-registry.types.js";
@@ -16,9 +25,11 @@ import {
   type TaskSummary,
   type TasksListParams,
   validateTasksCancelParams,
+  validateTasksCompleteParams,
   validateTasksCreateParams,
   validateTasksGetParams,
   validateTasksListParams,
+  validateTasksUpdateProgressParams,
 } from "../protocol/index.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
@@ -40,6 +51,22 @@ const TASK_STATUS_TO_LEDGER_STATUS: Record<TaskStatus, TaskLedgerStatus> = {
 const TASK_CREATE_MAX_TASK_CHARS = 4_000;
 const TASK_CREATE_MAX_LABEL_CHARS = 200;
 const TASK_CREATE_MAX_KIND_CHARS = 80;
+
+function mapAgentTaskErrorToRespond(
+  error: unknown,
+  respond: (ok: boolean, payload?: unknown, err?: ReturnType<typeof errorShape>) => void,
+): boolean {
+  if (
+    error instanceof AgentTaskNotFoundError ||
+    error instanceof AgentTaskOwnershipError ||
+    error instanceof AgentTaskWrongRuntimeError ||
+    error instanceof AgentTaskTerminalError
+  ) {
+    respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, error.message));
+    return true;
+  }
+  return false;
+}
 
 const LEDGER_STATUS_TO_TASK_STATUSES: Record<TaskLedgerStatus, TaskStatus[]> = {
   queued: ["queued"],
@@ -278,6 +305,61 @@ export const tasksHandlers: GatewayRequestHandlers = {
     } catch (error) {
       if (error instanceof AgentTaskRateLimitError) {
         respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, error.message));
+        return;
+      }
+      throw error;
+    }
+  },
+  "tasks.updateProgress": ({ params, respond }) => {
+    if (!validateTasksUpdateProgressParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid tasks.updateProgress params: ${formatValidationErrors(validateTasksUpdateProgressParams.errors)}`,
+        ),
+      );
+      return;
+    }
+    try {
+      const record = updateAgentTaskProgress({
+        taskId: params.taskId,
+        ownerKey: params.ownerKey,
+        progressSummary: params.progressSummary,
+      });
+      respond(true, { task: mapTaskSummary(record) });
+    } catch (error) {
+      if (mapAgentTaskErrorToRespond(error, respond)) {
+        return;
+      }
+      throw error;
+    }
+  },
+  "tasks.complete": ({ params, respond }) => {
+    if (!validateTasksCompleteParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid tasks.complete params: ${formatValidationErrors(validateTasksCompleteParams.errors)}`,
+        ),
+      );
+      return;
+    }
+    try {
+      const record = completeAgentTask({
+        taskId: params.taskId,
+        ownerKey: params.ownerKey,
+        outcome: params.outcome,
+        ...(params.terminalSummary !== undefined
+          ? { terminalSummary: params.terminalSummary }
+          : {}),
+      });
+      respond(true, { task: mapTaskSummary(record) });
+    } catch (error) {
+      if (mapAgentTaskErrorToRespond(error, respond)) {
         return;
       }
       throw error;

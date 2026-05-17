@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { validateTasksCreateParams } from "../index.js";
+import {
+  validateTasksCompleteParams,
+  validateTasksCreateParams,
+  validateTasksUpdateProgressParams,
+} from "../index.js";
 
 describe("tasks.create protocol contract", () => {
   it("accepts a minimal payload an agent tool would send", () => {
@@ -60,6 +64,68 @@ describe("tasks.create protocol contract", () => {
       notifyPolicy: "shout_loudly",
     };
     const ok = validateTasksCreateParams(params);
+    expect(ok).toBe(false);
+  });
+});
+
+describe("tasks.updateProgress protocol contract", () => {
+  it("accepts a valid payload", () => {
+    const ok = validateTasksUpdateProgressParams({
+      taskId: "task-1",
+      ownerKey: "agent:main:main",
+      progressSummary: "Pulled changelog; mapping deltas.",
+    });
+    expect(ok).toBe(true);
+    expect(validateTasksUpdateProgressParams.errors).toBeFalsy();
+  });
+
+  it("rejects empty progressSummary", () => {
+    const ok = validateTasksUpdateProgressParams({
+      taskId: "task-1",
+      ownerKey: "agent:main:main",
+      progressSummary: "",
+    });
+    expect(ok).toBe(false);
+  });
+
+  it("rejects unknown properties", () => {
+    const ok = validateTasksUpdateProgressParams({
+      taskId: "task-1",
+      ownerKey: "agent:main:main",
+      progressSummary: "valid",
+      status: "running",
+    });
+    expect(ok).toBe(false);
+  });
+});
+
+describe("tasks.complete protocol contract", () => {
+  it("accepts outcome=succeeded with a terminalSummary", () => {
+    const ok = validateTasksCompleteParams({
+      taskId: "task-1",
+      ownerKey: "agent:main:main",
+      outcome: "succeeded",
+      terminalSummary: "Done.",
+    });
+    expect(ok).toBe(true);
+    expect(validateTasksCompleteParams.errors).toBeFalsy();
+  });
+
+  it("accepts outcome=blocked without a terminalSummary", () => {
+    const ok = validateTasksCompleteParams({
+      taskId: "task-1",
+      ownerKey: "agent:main:main",
+      outcome: "blocked",
+    });
+    expect(ok).toBe(true);
+  });
+
+  it("rejects an unknown outcome", () => {
+    const ok = validateTasksCompleteParams({
+      taskId: "task-1",
+      ownerKey: "agent:main:main",
+      outcome: "cancelled",
+    });
     expect(ok).toBe(false);
   });
 });
