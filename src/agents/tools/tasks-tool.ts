@@ -42,7 +42,8 @@ Notes:
 - Tasks live indefinitely once terminal — they're a permanent audit log, not garbage-collected.
 - Identical active (task, label) creates dedupe — repeating returns the existing task_id.
 - There is a rate cap on active agent-created tasks. Complete tasks before creating more.
-- Scope is global on this install: tasks are visible / mutable regardless of which Slack channel, thread, or subagent created them. Use 'session_key' on each record to judge whether a task originated in the session you're currently driving. Tasks from non-agent runtimes (subagent, cron, etc.) remain read-only via this tool — their own subsystems own writes. Users cancel tasks themselves.`;
+- Scope is global on this install: tasks are visible / mutable regardless of which Slack channel, thread, or subagent created them. Use 'session_key' on each record to judge whether a task originated in the session you're currently driving.
+- Tasks from non-agent runtimes are read-only via this tool. To act on them, use the runtime-specific tool: 'subagents' (action="kill") to terminate a subagent task, 'cron' (action="remove") to remove a cron job. ACP and CLI runtime tasks are operator-managed — users cancel via 'openclaw tasks cancel'; do not try to manipulate them from here. Use complete(outcome="blocked") on your own agent task if you're stopping early.`;
 
 const TasksToolSchema = Type.Object({
   action: Type.Union([
