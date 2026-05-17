@@ -15,6 +15,10 @@ ARG OPENCLAW_NODE_BOOKWORM_SLIM_DIGEST="sha256:e8e2e91b1378f83c5b2dd15f0247f3411
 # Keep in sync with .github/actions/setup-node-env/action.yml bun-version.
 # To update: docker buildx imagetools inspect oven/bun:<version> and use the manifest-list digest.
 ARG OPENCLAW_BUN_IMAGE="oven/bun:1.3.13@sha256:87416c977a612a204eb54ab9f3927023c2a3c971f4f345a01da08ea6262ae30e"
+# gog (Google Workspace CLI) for the bundled `gog` skill (skills/gog/SKILL.md).
+# Multi-stage COPY: we only need the static `gog` binary, not the gogcli image's userland.
+# To update: docker buildx imagetools inspect ghcr.io/openclaw/gogcli:<version> and use the manifest-list digest.
+ARG GOGCLI_IMAGE="ghcr.io/openclaw/gogcli:v0.17.0@sha256:ad88c2b934e49e29f81e313679f9fc2d5a8ca2ebed88e2ebe84ff53ef5728da9"
 
 # Base images are pinned to SHA256 digests for reproducible builds.
 # Dependabot refreshes these blessed digests; release builds consume the
@@ -46,6 +50,7 @@ RUN --mount=type=bind,source=packages,target=/tmp/packages,readonly \
 
 # ── Stage 2: Build ──────────────────────────────────────────────
 FROM ${OPENCLAW_BUN_IMAGE} AS bun-binary
+FROM ${GOGCLI_IMAGE} AS gogcli-binary
 FROM ${OPENCLAW_NODE_BOOKWORM_IMAGE} AS build
 ARG OPENCLAW_BUNDLED_PLUGIN_DIR
 
@@ -179,6 +184,11 @@ COPY --from=runtime-assets --chown=node:node /app/${OPENCLAW_BUNDLED_PLUGIN_DIR}
 COPY --from=runtime-assets --chown=node:node /app/skills ./skills
 COPY --from=runtime-assets --chown=node:node /app/docs ./docs
 COPY --from=runtime-assets --chown=node:node /app/qa ./qa
+
+# gog binary for the bundled `gog` skill. Satisfies skills/gog/SKILL.md's
+# `requires.bins: ["gog"]` so skills.status reports gog as eligible. Auth state
+# is expected to live at /home/node/.config/gogcli (bind-mounted from host).
+COPY --from=gogcli-binary /usr/local/bin/gog /usr/local/bin/gog
 
 # Keep pnpm available in the runtime image for container-local workflows.
 # Use a shared Corepack home so the non-root `node` user does not need a
