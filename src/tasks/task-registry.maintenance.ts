@@ -535,6 +535,12 @@ function shouldPruneTerminalTask(task: TaskRecord, now: number): boolean {
   if (!isTerminalTask(task)) {
     return false;
   }
+  // Agent-created tasks are durable backlog entries; the user-facing ledger keeps them
+  // around indefinitely even after completion. They are deleted only via explicit user
+  // action, never by time-based retention.
+  if (task.runtime === "agent") {
+    return false;
+  }
   if (typeof task.cleanupAfter === "number") {
     return now >= task.cleanupAfter;
   }
@@ -543,6 +549,9 @@ function shouldPruneTerminalTask(task: TaskRecord, now: number): boolean {
 }
 
 function shouldStampCleanupAfter(task: TaskRecord): boolean {
+  if (task.runtime === "agent") {
+    return false;
+  }
   return isTerminalTask(task) && typeof task.cleanupAfter !== "number";
 }
 

@@ -981,7 +981,11 @@ function updateTask(taskId: string, patch: Partial<TaskRecord>): TaskRecord | nu
     return null;
   }
   const next = normalizeTaskTimestamps({ ...current, ...patch });
-  if (isTerminalTaskStatus(next.status) && typeof next.cleanupAfter !== "number") {
+  if (
+    isTerminalTaskStatus(next.status) &&
+    typeof next.cleanupAfter !== "number" &&
+    next.runtime !== "agent"
+  ) {
     const terminalAt = next.endedAt ?? next.lastEventAt ?? Date.now();
     next.cleanupAfter = terminalAt + DEFAULT_TASK_RETENTION_MS;
   }
@@ -1610,7 +1614,11 @@ export function createTaskRecord(params: {
     extrapolationGraphId: normalizeOptionalString(params.extrapolationGraphId),
     extrapolationNodeId: normalizeOptionalString(params.extrapolationNodeId),
   });
-  if (isTerminalTaskStatus(record.status) && typeof record.cleanupAfter !== "number") {
+  if (
+    isTerminalTaskStatus(record.status) &&
+    typeof record.cleanupAfter !== "number" &&
+    record.runtime !== "agent"
+  ) {
     record.cleanupAfter =
       (record.endedAt ?? record.lastEventAt ?? record.createdAt) + DEFAULT_TASK_RETENTION_MS;
   }

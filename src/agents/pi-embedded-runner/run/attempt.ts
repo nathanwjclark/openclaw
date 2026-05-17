@@ -49,6 +49,7 @@ import { getPluginToolMeta } from "../../../plugins/tools.js";
 import { isAcpSessionKey, isSubagentSessionKey } from "../../../routing/session-key.js";
 import { annotateInterSessionPromptText } from "../../../sessions/input-provenance.js";
 import { normalizeOptionalString } from "../../../shared/string-coerce.js";
+import { renderTasksContextForRun } from "../../../tasks/context-injection.js";
 import {
   buildTrajectoryArtifacts,
   buildTrajectoryRunMetadata,
@@ -1664,9 +1665,15 @@ export async function runEmbeddedAttempt(
       agentId: sessionAgentId,
       config: params.config,
     }).rendered;
+    const tasksContextBlock = renderTasksContextForRun({
+      sessionKey: params.sessionKey,
+      agentId: sessionAgentId,
+      config: params.config,
+    }).rendered;
     const mergedExtraSystemPrompt = mergeExtraSystemPrompts(
       params.extraSystemPrompt,
       extrapolationContextBlock,
+      tasksContextBlock,
     );
     const attemptSystemPrompt = buildAttemptSystemPrompt({
       isRawModelRun,
