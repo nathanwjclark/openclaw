@@ -276,4 +276,127 @@ describe("tasks gateway handlers", () => {
     const error = calls[0]?.[2];
     expect(JSON.stringify(error)).toMatch(/unexpectedField/);
   });
+
+  async function createAgentTaskViaHandler(label: string): Promise<string> {
+    const { calls, respond } = captureRespond();
+    await tasksHandlers["tasks.create"]({
+      req: { type: "req", id: `req-prep-${label}`, method: "tasks.create" },
+      params: {
+        task: `Task ${label}`,
+        label,
+        ownerKey: "agent:main:main",
+        sessionKey: "agent:main:main",
+      },
+      respond,
+      context: createContext(),
+      client: null,
+      isWebchatConnect: () => false,
+    });
+    const payload = calls[0]?.[1] as TaskResponsePayload | undefined;
+    const id = payload?.task?.id;
+    if (typeof id !== "string") {
+      throw new Error("create handler did not return a task id");
+    }
+    return id;
+  }
+
+  it("tasks.updateProgress writes a progress summary and moves status to running", async () => {
+    const taskId = await createAgentTaskViaHandler("update-1");
+    const { calls, respond } = captureRespond();
+    await tasksHandlers["tasks.updateProgress"]({
+      req: { type: "req", id: "req-update-1", method: "tasks.updateProgress" },
+      params: {
+        taskId,
+        ownerKey: "agent:main:main",
+        progressSummary: "Pulled the changelog; comparing.",
+      },
+      respond,
+      context: createContext(),
+      client: null,
+      isWebchatConnect: () => false,
+    });
+    expect(calls[0]?.[0]).toBe(true);
+    const payload = calls[0]?.[1] as TaskResponsePayload | undefined;
+    expect(payload?.task?.status).toBe("running");
+    expect(payload?.task?.progressSummary).toContain("changelog");
+  });
+
+  it("tasks.updateProgress rejects when ownerKey does not match", async () => {
+    const taskId = await createAgentTaskViaHandler("update-2");
+    const { calls, respond } = captureRespond();
+    await tasksHandlers["tasks.updateProgress"]({
+      req: { type: "req", id: "req-update-2", method: "tasks.updateProgress" },
+      params: {
+        taskId,
+        ownerKey: "agent:other:other",
+        progressSummary: "should be rejected",
+      },
+      respond,
+      context: createContext(),
+      client: null,
+      isWebchatConnect: () => false,
+    });
+    expect(calls[0]?.[0]).toBe(false);
+    expect(JSON.stringify(calls[0]?.[2])).toMatch(/different session/);
+  });
+
+  it("tasks.complete with outcome='succeeded' marks the task succeeded", async () => {
+    const taskId = await createAgentTaskViaHandler("complete-1");
+    const { calls, respond } = captureRespond();
+    await tasksHandlers["tasks.complete"]({
+      req: { type: "req", id: "req-complete-1", method: "tasks.complete" },
+      params: {
+        taskId,
+        ownerKey: "agent:main:main",
+        outcome: "succeeded",
+        terminalSummary: "Done.",
+      },
+      respond,
+      context: createContext(),
+      client: null,
+      isWebchatConnect: () => false,
+    });
+    expect(calls[0]?.[0]).toBe(true);
+    const payload = calls[0]?.[1] as TaskResponsePayload | undefined;
+    expect(payload?.task?.status).toBe("completed");
+    expect(payload?.task?.terminalSummary).toBe("Done.");
+  });
+
+  it("tasks.complete with outcome='blocked' marks the task failed", async () => {
+    const taskId = await createAgentTaskViaHandler("complete-2");
+    const { calls, respond } = captureRespond();
+    await tasksHandlers["tasks.complete"]({
+      req: { type: "req", id: "req-complete-2", method: "tasks.complete" },
+      params: {
+        taskId,
+        ownerKey: "agent:main:main",
+        outcome: "blocked",
+      },
+      respond,
+      context: createContext(),
+      client: null,
+      isWebchatConnect: () => false,
+    });
+    expect(calls[0]?.[0]).toBe(true);
+    const payload = calls[0]?.[1] as TaskResponsePayload | undefined;
+    expect(payload?.task?.status).toBe("failed");
+  });
+
+  it("tasks.complete rejects an invalid outcome value", async () => {
+    const taskId = await createAgentTaskViaHandler("complete-3");
+    const { calls, respond } = captureRespond();
+    await tasksHandlers["tasks.complete"]({
+      req: { type: "req", id: "req-complete-3", method: "tasks.complete" },
+      params: {
+        taskId,
+        ownerKey: "agent:main:main",
+        outcome: "shouted-loudly",
+      },
+      respond,
+      context: createContext(),
+      client: null,
+      isWebchatConnect: () => false,
+    });
+    expect(calls[0]?.[0]).toBe(false);
+  });
 });

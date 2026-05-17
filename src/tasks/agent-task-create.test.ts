@@ -3,12 +3,22 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  AgentTaskNotFoundError,
+  AgentTaskOwnershipError,
   AgentTaskRateLimitError,
+  AgentTaskTerminalError,
+  AgentTaskWrongRuntimeError,
   DEFAULT_MAX_ACTIVE_AGENT_TASKS,
+  completeAgentTask,
   createAgentTaskRecord,
   isAgentTaskRateLimitError,
+  updateAgentTaskProgress,
 } from "./agent-task-create.js";
-import { markTaskTerminalById, resetTaskRegistryForTests } from "./runtime-internal.js";
+import {
+  createTaskRecord,
+  markTaskTerminalById,
+  resetTaskRegistryForTests,
+} from "./runtime-internal.js";
 
 const ORIGINAL_STATE_DIR = process.env.OPENCLAW_STATE_DIR;
 let stateDir: string;
@@ -155,5 +165,165 @@ describe("createAgentTaskRecord", () => {
       { maxActiveAgentTasks: limit },
     );
     expect(DEFAULT_MAX_ACTIVE_AGENT_TASKS).toBeGreaterThan(0);
+  });
+});
+
+describe("updateAgentTaskProgress", () => {
+  it("writes a progress note and bumps queued -> running on first update", () => {
+    const created = createAgentTaskRecord({
+      ownerKey: OWNER,
+      sessionKey: SESSION,
+      task: "Investigate upgrade",
+      label: "p-1",
+    });
+    expect(created.status).toBe("queued");
+    expect(created.startedAt).toBeUndefined();
+    const updated = updateAgentTaskProgress({
+      taskId: created.taskId,
+      ownerKey: OWNER,
+      progressSummary: "Pulled upstream changelog; reading release notes now.",
+    });
+    expect(updated.taskId).toBe(created.taskId);
+    expect(updated.status).toBe("running");
+    expect(updated.progressSummary).toContain("changelog");
+    expect(typeof updated.startedAt).toBe("number");
+  });
+
+  it("throws AgentTaskNotFoundError for unknown task ids", () => {
+    expect(() =>
+      updateAgentTaskProgress({
+        taskId: "00000000-0000-0000-0000-000000000000",
+        ownerKey: OWNER,
+        progressSummary: "anything",
+      }),
+    ).toThrow(AgentTaskNotFoundError);
+  });
+
+  it("throws AgentTaskOwnershipError when a different owner attempts to update", () => {
+    const created = createAgentTaskRecord({
+      ownerKey: OWNER,
+      sessionKey: SESSION,
+      task: "Owned by main",
+      label: "p-2",
+    });
+    expect(() =>
+      updateAgentTaskProgress({
+        taskId: created.taskId,
+        ownerKey: "agent:other:other",
+        progressSummary: "no permission",
+      }),
+    ).toThrow(AgentTaskOwnershipError);
+  });
+
+  it("throws AgentTaskWrongRuntimeError when target task is not agent-runtime", () => {
+    const cliTask = createTaskRecord({
+      runtime: "cli",
+      requesterSessionKey: OWNER,
+      ownerKey: OWNER,
+      scopeKind: "session",
+      runId: "run-x",
+      task: "non-agent task",
+      status: "running",
+      deliveryStatus: "pending",
+    });
+    expect(() =>
+      updateAgentTaskProgress({
+        taskId: cliTask.taskId,
+        ownerKey: OWNER,
+        progressSummary: "should be rejected",
+      }),
+    ).toThrow(AgentTaskWrongRuntimeError);
+  });
+
+  it("throws AgentTaskTerminalError on a task that's already complete", () => {
+    const created = createAgentTaskRecord({
+      ownerKey: OWNER,
+      sessionKey: SESSION,
+      task: "Already done",
+      label: "p-4",
+    });
+    completeAgentTask({
+      taskId: created.taskId,
+      ownerKey: OWNER,
+      outcome: "succeeded",
+      terminalSummary: "done",
+    });
+    expect(() =>
+      updateAgentTaskProgress({
+        taskId: created.taskId,
+        ownerKey: OWNER,
+        progressSummary: "no, it's done",
+      }),
+    ).toThrow(AgentTaskTerminalError);
+  });
+});
+
+describe("completeAgentTask", () => {
+  it("marks the task succeeded for outcome=succeeded", () => {
+    const created = createAgentTaskRecord({
+      ownerKey: OWNER,
+      sessionKey: SESSION,
+      task: "Wrap up",
+      label: "c-1",
+    });
+    const completed = completeAgentTask({
+      taskId: created.taskId,
+      ownerKey: OWNER,
+      outcome: "succeeded",
+      terminalSummary: "Done",
+    });
+    expect(completed.status).toBe("succeeded");
+    expect(completed.terminalOutcome).toBe("succeeded");
+    expect(completed.terminalSummary).toBe("Done");
+    expect(typeof completed.endedAt).toBe("number");
+  });
+
+  it("marks the task failed for outcome=blocked", () => {
+    const created = createAgentTaskRecord({
+      ownerKey: OWNER,
+      sessionKey: SESSION,
+      task: "Stuck",
+      label: "c-2",
+    });
+    const completed = completeAgentTask({
+      taskId: created.taskId,
+      ownerKey: OWNER,
+      outcome: "blocked",
+      terminalSummary: "Waiting on external info",
+    });
+    expect(completed.status).toBe("failed");
+    expect(completed.terminalOutcome).toBe("blocked");
+  });
+
+  it("refuses double-complete with AgentTaskTerminalError", () => {
+    const created = createAgentTaskRecord({
+      ownerKey: OWNER,
+      sessionKey: SESSION,
+      task: "Once",
+      label: "c-3",
+    });
+    completeAgentTask({ taskId: created.taskId, ownerKey: OWNER, outcome: "succeeded" });
+    expect(() =>
+      completeAgentTask({ taskId: created.taskId, ownerKey: OWNER, outcome: "blocked" }),
+    ).toThrow(AgentTaskTerminalError);
+  });
+
+  it("frees rate-cap capacity once completed", () => {
+    const limit = 2;
+    const first = createAgentTaskRecord(
+      { ownerKey: OWNER, sessionKey: SESSION, task: "task A", label: "ca" },
+      { maxActiveAgentTasks: limit },
+    );
+    createAgentTaskRecord(
+      { ownerKey: OWNER, sessionKey: SESSION, task: "task B", label: "cb" },
+      { maxActiveAgentTasks: limit },
+    );
+    completeAgentTask({ taskId: first.taskId, ownerKey: OWNER, outcome: "succeeded" });
+    const third = createAgentTaskRecord(
+      { ownerKey: OWNER, sessionKey: SESSION, task: "task C", label: "cc" },
+      { maxActiveAgentTasks: limit },
+    );
+    expect(third.taskId).not.toBe(first.taskId);
+    expect(third.runtime).toBe("agent");
   });
 });

@@ -120,6 +120,107 @@ describe("tasks agent tool", () => {
     expect(payload.status).toBe("ok");
     expect(typeof payload.task_id).toBe("string");
   });
+
+  it("update_progress writes a progress note and moves status to running", async () => {
+    const tool = buildTool();
+    const created = parsePayload(
+      await tool.execute("call-up-1", {
+        action: "create",
+        task: "Audit upgrade",
+        label: "upgrade",
+      }),
+    );
+    expect(created.task_status).toBe("queued");
+    const updated = parsePayload(
+      await tool.execute("call-up-2", {
+        action: "update_progress",
+        task_id: created.task_id as string,
+        progress_summary: "Pulled changelog; mapping deltas.",
+      }),
+    );
+    expect(updated.status).toBe("ok");
+    expect(updated.task_status).toBe("running");
+  });
+
+  it("update_progress returns not_found for an unknown task id", async () => {
+    const tool = buildTool();
+    const payload = parsePayload(
+      await tool.execute("call-nf", {
+        action: "update_progress",
+        task_id: "00000000-0000-0000-0000-000000000000",
+        progress_summary: "ignored",
+      }),
+    );
+    expect(payload.status).toBe("not_found");
+  });
+
+  it("complete with outcome='succeeded' marks the task succeeded", async () => {
+    const tool = buildTool();
+    const created = parsePayload(
+      await tool.execute("call-c1", { action: "create", task: "wrap", label: "wrap" }),
+    );
+    const completed = parsePayload(
+      await tool.execute("call-c2", {
+        action: "complete",
+        task_id: created.task_id as string,
+        outcome: "succeeded",
+        terminal_summary: "Done.",
+      }),
+    );
+    expect(completed.status).toBe("ok");
+    expect(completed.task_status).toBe("succeeded");
+    expect(completed.terminal_outcome).toBe("succeeded");
+  });
+
+  it("complete with outcome='blocked' marks the task failed/blocked", async () => {
+    const tool = buildTool();
+    const created = parsePayload(
+      await tool.execute("call-b1", { action: "create", task: "stuck", label: "stuck" }),
+    );
+    const completed = parsePayload(
+      await tool.execute("call-b2", {
+        action: "complete",
+        task_id: created.task_id as string,
+        outcome: "blocked",
+      }),
+    );
+    expect(completed.task_status).toBe("failed");
+    expect(completed.terminal_outcome).toBe("blocked");
+  });
+
+  it("complete returns already_terminal on second call", async () => {
+    const tool = buildTool();
+    const created = parsePayload(
+      await tool.execute("call-d1", { action: "create", task: "once", label: "once" }),
+    );
+    await tool.execute("call-d2", {
+      action: "complete",
+      task_id: created.task_id as string,
+      outcome: "succeeded",
+    });
+    const second = parsePayload(
+      await tool.execute("call-d3", {
+        action: "complete",
+        task_id: created.task_id as string,
+        outcome: "blocked",
+      }),
+    );
+    expect(second.status).toBe("already_terminal");
+  });
+
+  it("complete requires a valid outcome value", async () => {
+    const tool = buildTool();
+    const created = parsePayload(
+      await tool.execute("call-e1", { action: "create", task: "x", label: "x" }),
+    );
+    await expect(
+      tool.execute("call-e2", {
+        action: "complete",
+        task_id: created.task_id as string,
+        outcome: "explosively",
+      }),
+    ).rejects.toThrow(/outcome/);
+  });
 });
 
 describe("isAgentTasksToolEnabled", () => {
