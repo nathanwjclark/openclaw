@@ -146,6 +146,11 @@ export type SpawnSubagentParams = {
   /** Source extrapolation node that drove this spawn, if any. */
   extrapolationGraphId?: string;
   extrapolationNodeId?: string;
+  /**
+   * Adopt an existing agent-runtime task instead of creating a fresh task record. The task
+   * stays in the agent's backlog; its lifecycle is now driven by this subagent run.
+   */
+  adoptTaskId?: string;
 };
 
 export type SpawnSubagentContext = {
@@ -1264,6 +1269,7 @@ export async function spawnSubagentDirect(
       retainAttachmentsOnKeep: retainOnSessionKeep,
       ...(params.extrapolationGraphId ? { extrapolationGraphId: params.extrapolationGraphId } : {}),
       ...(params.extrapolationNodeId ? { extrapolationNodeId: params.extrapolationNodeId } : {}),
+      ...(params.adoptTaskId ? { adoptTaskId: params.adoptTaskId } : {}),
     });
     if (params.extrapolationGraphId && params.extrapolationNodeId) {
       void promoteExtrapolationNodeAfterSpawn({

@@ -1361,6 +1361,35 @@ export function markTaskRunningById(params: {
   return updateTask(params.taskId, patch);
 }
 
+export function attachSubagentRunToTaskById(params: {
+  taskId: string;
+  childSessionKey: string;
+  runId: string;
+  label?: string;
+  startedAt?: number;
+  lastEventAt?: number;
+}): TaskRecord | null {
+  ensureTaskRegistryReady();
+  const now = params.startedAt ?? Date.now();
+  const lastEventAt = params.lastEventAt ?? now;
+  const patch: Partial<TaskRecord> = {
+    status: "running",
+    childSessionKey: params.childSessionKey,
+    runId: params.runId,
+    startedAt: now,
+    lastEventAt,
+  };
+  if (params.label !== undefined && params.label.trim()) {
+    patch.label = params.label.trim();
+  }
+  const updated = updateTask(params.taskId, patch);
+  if (updated) {
+    addRunIdIndex(params.taskId, updated.runId);
+    addRelatedSessionKeyIndex(params.taskId, updated);
+  }
+  return updated;
+}
+
 export function setTaskCleanupAfterById(params: {
   taskId: string;
   cleanupAfter: number;

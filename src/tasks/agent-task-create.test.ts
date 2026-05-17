@@ -3,12 +3,14 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  AgentTaskAdoptedError,
   AgentTaskNotFoundError,
   AgentTaskOwnershipError,
   AgentTaskRateLimitError,
   AgentTaskTerminalError,
   AgentTaskWrongRuntimeError,
   DEFAULT_MAX_ACTIVE_AGENT_TASKS,
+  adoptAgentTaskForSubagentRun,
   completeAgentTask,
   createAgentTaskRecord,
   isAgentTaskRateLimitError,
@@ -16,6 +18,7 @@ import {
 } from "./agent-task-create.js";
 import {
   createTaskRecord,
+  getTaskById,
   markTaskTerminalById,
   resetTaskRegistryForTests,
 } from "./runtime-internal.js";
@@ -325,7 +328,7 @@ describe("completeAgentTask", () => {
     expect(completed.cleanupAfter).toBeUndefined();
   });
 
-  it("frees rate-cap capacity once completed", () => {
+  it("frees rate-cap capacity once completed (anchor)", () => {
     const limit = 2;
     const first = createAgentTaskRecord(
       { ownerKey: OWNER, sessionKey: SESSION, task: "task A", label: "ca" },
@@ -342,5 +345,183 @@ describe("completeAgentTask", () => {
     );
     expect(third.taskId).not.toBe(first.taskId);
     expect(third.runtime).toBe("agent");
+  });
+});
+
+describe("adoptAgentTaskForSubagentRun", () => {
+  it("attaches a subagent run to a queued agent task and moves it to running", () => {
+    const created = createAgentTaskRecord({
+      ownerKey: OWNER,
+      sessionKey: SESSION,
+      task: "Spawn for this",
+      label: "spawn-1",
+    });
+    const adopted = adoptAgentTaskForSubagentRun({
+      taskId: created.taskId,
+      ownerKey: OWNER,
+      runId: "run-abc",
+      childSessionKey: "agent:worker:subagent:child",
+    });
+    expect(adopted.taskId).toBe(created.taskId);
+    expect(adopted.status).toBe("running");
+    expect(adopted.runtime).toBe("agent");
+    expect(adopted.childSessionKey).toBe("agent:worker:subagent:child");
+    expect(adopted.runId).toBe("run-abc");
+  });
+
+  it("indexes the adopted task by runId so subagent termination can find it", () => {
+    const created = createAgentTaskRecord({
+      ownerKey: OWNER,
+      sessionKey: SESSION,
+      task: "Spawn for this",
+      label: "spawn-idx",
+    });
+    adoptAgentTaskForSubagentRun({
+      taskId: created.taskId,
+      ownerKey: OWNER,
+      runId: "run-idx",
+      childSessionKey: "agent:worker:subagent:idx",
+    });
+    // Termination path uses markTaskTerminalById indirectly via runId; we mirror its lookup here.
+    markTaskTerminalById({
+      taskId: created.taskId,
+      status: "succeeded",
+      endedAt: Date.now(),
+      terminalSummary: "subagent done",
+      terminalOutcome: "succeeded",
+    });
+    const final = getTaskById(created.taskId);
+    expect(final?.status).toBe("succeeded");
+    expect(final?.runtime).toBe("agent");
+    expect(final?.cleanupAfter).toBeUndefined();
+  });
+
+  it("rejects adoption when the task is owned by a different session", () => {
+    const created = createAgentTaskRecord({
+      ownerKey: OWNER,
+      sessionKey: SESSION,
+      task: "Mine",
+      label: "owner-check",
+    });
+    expect(() =>
+      adoptAgentTaskForSubagentRun({
+        taskId: created.taskId,
+        ownerKey: "agent:other:other",
+        runId: "run-x",
+        childSessionKey: "agent:worker:subagent:x",
+      }),
+    ).toThrow(AgentTaskOwnershipError);
+  });
+
+  it("rejects adoption when the task is non-agent runtime", () => {
+    const cli = createTaskRecord({
+      runtime: "cli",
+      requesterSessionKey: OWNER,
+      ownerKey: OWNER,
+      scopeKind: "session",
+      runId: "run-cli",
+      task: "cli task",
+      status: "running",
+      deliveryStatus: "pending",
+    });
+    expect(() =>
+      adoptAgentTaskForSubagentRun({
+        taskId: cli.taskId,
+        ownerKey: OWNER,
+        runId: "run-cli-2",
+        childSessionKey: "agent:worker:subagent:cli",
+      }),
+    ).toThrow(AgentTaskWrongRuntimeError);
+  });
+
+  it("rejects double-adoption (task already has a childSessionKey)", () => {
+    const created = createAgentTaskRecord({
+      ownerKey: OWNER,
+      sessionKey: SESSION,
+      task: "Adopted once",
+      label: "twice",
+    });
+    adoptAgentTaskForSubagentRun({
+      taskId: created.taskId,
+      ownerKey: OWNER,
+      runId: "run-1",
+      childSessionKey: "agent:worker:subagent:once",
+    });
+    expect(() =>
+      adoptAgentTaskForSubagentRun({
+        taskId: created.taskId,
+        ownerKey: OWNER,
+        runId: "run-2",
+        childSessionKey: "agent:worker:subagent:twice",
+      }),
+    ).toThrow(AgentTaskAdoptedError);
+  });
+
+  it("rejects adoption of a terminal task", () => {
+    const created = createAgentTaskRecord({
+      ownerKey: OWNER,
+      sessionKey: SESSION,
+      task: "Already done",
+      label: "done",
+    });
+    completeAgentTask({
+      taskId: created.taskId,
+      ownerKey: OWNER,
+      outcome: "succeeded",
+    });
+    expect(() =>
+      adoptAgentTaskForSubagentRun({
+        taskId: created.taskId,
+        ownerKey: OWNER,
+        runId: "run-late",
+        childSessionKey: "agent:worker:subagent:late",
+      }),
+    ).toThrow(AgentTaskTerminalError);
+  });
+});
+
+describe("agent-tool mutations after subagent adoption", () => {
+  it("update_progress is blocked once the task has been adopted by a subagent", () => {
+    const created = createAgentTaskRecord({
+      ownerKey: OWNER,
+      sessionKey: SESSION,
+      task: "Spawn-driven",
+      label: "blk-1",
+    });
+    adoptAgentTaskForSubagentRun({
+      taskId: created.taskId,
+      ownerKey: OWNER,
+      runId: "run-blk-1",
+      childSessionKey: "agent:worker:subagent:blk1",
+    });
+    expect(() =>
+      updateAgentTaskProgress({
+        taskId: created.taskId,
+        ownerKey: OWNER,
+        progressSummary: "should not be allowed",
+      }),
+    ).toThrow(AgentTaskAdoptedError);
+  });
+
+  it("complete is blocked once the task has been adopted by a subagent", () => {
+    const created = createAgentTaskRecord({
+      ownerKey: OWNER,
+      sessionKey: SESSION,
+      task: "Spawn-driven 2",
+      label: "blk-2",
+    });
+    adoptAgentTaskForSubagentRun({
+      taskId: created.taskId,
+      ownerKey: OWNER,
+      runId: "run-blk-2",
+      childSessionKey: "agent:worker:subagent:blk2",
+    });
+    expect(() =>
+      completeAgentTask({
+        taskId: created.taskId,
+        ownerKey: OWNER,
+        outcome: "succeeded",
+      }),
+    ).toThrow(AgentTaskAdoptedError);
   });
 });

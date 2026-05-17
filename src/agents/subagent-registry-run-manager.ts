@@ -3,6 +3,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { callGateway } from "../gateway/call.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
+import { adoptAgentTaskForSubagentRun } from "../tasks/agent-task-create.js";
 import { createRunningTaskRun } from "../tasks/detached-task-runtime.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.shared.js";
 import type { DeliveryContext } from "../utils/delivery-context.types.js";
@@ -103,6 +104,12 @@ export type RegisterSubagentRunParams = {
   /** Source extrapolation node that promoted this subagent run, if any. */
   extrapolationGraphId?: string;
   extrapolationNodeId?: string;
+  /**
+   * Adopt an existing agent-runtime task instead of creating a new task record. The task's
+   * runtime stays "agent" (it remains the agent's intent), but childSessionKey + runId are
+   * attached so subagent termination routes back to it via the standard runId path.
+   */
+  adoptTaskId?: string;
 };
 
 export function createSubagentRunManager(params: {
@@ -454,33 +461,57 @@ export function createSubagentRunManager(params: {
       retainAttachmentsOnKeep: registerParams.retainAttachmentsOnKeep,
     };
     params.runs.set(runId, entry);
-    try {
-      createRunningTaskRun({
-        runtime: "subagent",
-        sourceId: runId,
-        ownerKey: requesterSessionKey,
-        scopeKind: "session",
-        requesterOrigin,
-        childSessionKey,
-        runId,
-        label: registerParams.label,
-        task: registerParams.task,
-        deliveryStatus:
-          registerParams.expectsCompletionMessage === false ? "not_applicable" : "pending",
-        startedAt: now,
-        lastEventAt: now,
-        ...(registerParams.extrapolationGraphId
-          ? { extrapolationGraphId: registerParams.extrapolationGraphId }
-          : {}),
-        ...(registerParams.extrapolationNodeId
-          ? { extrapolationNodeId: registerParams.extrapolationNodeId }
-          : {}),
-      });
-    } catch (error) {
-      log.warn("Failed to create background task for subagent run", {
-        runId: registerParams.runId,
-        error,
-      });
+    if (registerParams.adoptTaskId) {
+      // Adoption path: an existing agent-runtime task is being driven by this subagent run.
+      // We intentionally do NOT create a new task record, and adoption failure is fatal
+      // (unlike the create path below) — the caller asked us to attach to a specific task
+      // and silently falling back would lose user intent.
+      try {
+        adoptAgentTaskForSubagentRun({
+          taskId: registerParams.adoptTaskId,
+          ownerKey: requesterSessionKey,
+          runId,
+          childSessionKey,
+          ...(registerParams.label ? { label: registerParams.label } : {}),
+          startedAt: now,
+        });
+      } catch (error) {
+        log.warn("Failed to adopt agent task for subagent run", {
+          adoptTaskId: registerParams.adoptTaskId,
+          runId: registerParams.runId,
+          error,
+        });
+        throw error;
+      }
+    } else {
+      try {
+        createRunningTaskRun({
+          runtime: "subagent",
+          sourceId: runId,
+          ownerKey: requesterSessionKey,
+          scopeKind: "session",
+          requesterOrigin,
+          childSessionKey,
+          runId,
+          label: registerParams.label,
+          task: registerParams.task,
+          deliveryStatus:
+            registerParams.expectsCompletionMessage === false ? "not_applicable" : "pending",
+          startedAt: now,
+          lastEventAt: now,
+          ...(registerParams.extrapolationGraphId
+            ? { extrapolationGraphId: registerParams.extrapolationGraphId }
+            : {}),
+          ...(registerParams.extrapolationNodeId
+            ? { extrapolationNodeId: registerParams.extrapolationNodeId }
+            : {}),
+        });
+      } catch (error) {
+        log.warn("Failed to create background task for subagent run", {
+          runId: registerParams.runId,
+          error,
+        });
+      }
     }
     params.ensureListener();
     params.persist();
