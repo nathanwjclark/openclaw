@@ -1,5 +1,6 @@
 import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { normalizeOptionalString } from "../../shared/string-coerce.js";
+import { AgentTaskRateLimitError, createAgentTaskRecord } from "../../tasks/agent-task-create.js";
 import { cancelDetachedTaskRunById } from "../../tasks/detached-task-runtime.js";
 import { getTaskById, listTaskRecords } from "../../tasks/runtime-internal.js";
 import type { TaskRecord, TaskStatus } from "../../tasks/task-registry.types.js";
@@ -15,6 +16,7 @@ import {
   type TaskSummary,
   type TasksListParams,
   validateTasksCancelParams,
+  validateTasksCreateParams,
   validateTasksGetParams,
   validateTasksListParams,
 } from "../protocol/index.js";
@@ -34,6 +36,10 @@ const TASK_STATUS_TO_LEDGER_STATUS: Record<TaskStatus, TaskLedgerStatus> = {
   cancelled: "cancelled",
   lost: "failed",
 };
+
+const TASK_CREATE_MAX_TASK_CHARS = 4_000;
+const TASK_CREATE_MAX_LABEL_CHARS = 200;
+const TASK_CREATE_MAX_KIND_CHARS = 80;
 
 const LEDGER_STATUS_TO_TASK_STATUSES: Record<TaskLedgerStatus, TaskStatus[]> = {
   queued: ["queued"],
@@ -190,6 +196,92 @@ export const tasksHandlers: GatewayRequestHandlers = {
       return;
     }
     respond(true, { task: mapTaskSummary(task) });
+  },
+  "tasks.create": ({ params, respond }) => {
+    if (!validateTasksCreateParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid tasks.create params: ${formatValidationErrors(validateTasksCreateParams.errors)}`,
+        ),
+      );
+      return;
+    }
+    const taskText = params.task.trim();
+    if (!taskText) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          "invalid tasks.create params: task must not be blank",
+        ),
+      );
+      return;
+    }
+    if (taskText.length > TASK_CREATE_MAX_TASK_CHARS) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid tasks.create params: task exceeds ${TASK_CREATE_MAX_TASK_CHARS} characters`,
+        ),
+      );
+      return;
+    }
+    const label = normalizeOptionalString(params.label);
+    if (label !== undefined && label.length > TASK_CREATE_MAX_LABEL_CHARS) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid tasks.create params: label exceeds ${TASK_CREATE_MAX_LABEL_CHARS} characters`,
+        ),
+      );
+      return;
+    }
+    const taskKind = normalizeOptionalString(params.taskKind);
+    if (taskKind !== undefined && taskKind.length > TASK_CREATE_MAX_KIND_CHARS) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid tasks.create params: taskKind exceeds ${TASK_CREATE_MAX_KIND_CHARS} characters`,
+        ),
+      );
+      return;
+    }
+    try {
+      const record = createAgentTaskRecord({
+        ownerKey: params.ownerKey,
+        sessionKey: params.sessionKey,
+        task: taskText,
+        ...(params.agentId !== undefined ? { agentId: params.agentId } : {}),
+        ...(label !== undefined ? { label } : {}),
+        ...(taskKind !== undefined ? { taskKind } : {}),
+        ...(params.parentTaskId !== undefined ? { parentTaskId: params.parentTaskId } : {}),
+        ...(params.parentFlowId !== undefined ? { parentFlowId: params.parentFlowId } : {}),
+        ...(params.notifyPolicy !== undefined ? { notifyPolicy: params.notifyPolicy } : {}),
+        ...(params.extrapolationGraphId !== undefined
+          ? { extrapolationGraphId: params.extrapolationGraphId }
+          : {}),
+        ...(params.extrapolationNodeId !== undefined
+          ? { extrapolationNodeId: params.extrapolationNodeId }
+          : {}),
+      });
+      respond(true, { task: mapTaskSummary(record) });
+    } catch (error) {
+      if (error instanceof AgentTaskRateLimitError) {
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, error.message));
+        return;
+      }
+      throw error;
+    }
   },
   "tasks.cancel": async ({ params, respond, context }) => {
     if (!validateTasksCancelParams(params)) {

@@ -89,3 +89,33 @@ export const TasksCancelResultSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+export const TaskNotifyPolicySchema = Type.Union([
+  Type.Literal("done_only"),
+  Type.Literal("state_changes"),
+  Type.Literal("silent"),
+]);
+
+export const TasksCreateParamsSchema = Type.Object(
+  {
+    task: NonEmptyString,
+    ownerKey: NonEmptyString,
+    sessionKey: NonEmptyString,
+    agentId: Type.Optional(NonEmptyString),
+    label: Type.Optional(Type.String()),
+    taskKind: Type.Optional(Type.String()),
+    parentTaskId: Type.Optional(NonEmptyString),
+    parentFlowId: Type.Optional(NonEmptyString),
+    notifyPolicy: Type.Optional(TaskNotifyPolicySchema),
+    extrapolationGraphId: Type.Optional(NonEmptyString),
+    extrapolationNodeId: Type.Optional(NonEmptyString),
+  },
+  { additionalProperties: false },
+);
+
+export const TasksCreateResultSchema = Type.Object(
+  {
+    task: TaskSummarySchema,
+  },
+  { additionalProperties: false },
+);

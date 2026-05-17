@@ -71,6 +71,7 @@ vi.mock("../tasks/task-registry.maintenance.js", async () => {
         acp: 0,
         cli: 0,
         cron: 0,
+        agent: 0,
       },
     }),
   };

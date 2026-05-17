@@ -347,6 +347,10 @@ import {
   TasksGetParamsSchema,
   type TasksGetResult,
   TasksGetResultSchema,
+  type TasksCreateParams,
+  TasksCreateParamsSchema,
+  type TasksCreateResult,
+  TasksCreateResultSchema,
   type TasksListParams,
   TasksListParamsSchema,
   type TasksListResult,
@@ -639,6 +643,7 @@ export const validateSessionsUsageParams =
 export const validateTasksListParams = lazyCompile<TasksListParams>(TasksListParamsSchema);
 export const validateTasksGetParams = lazyCompile<TasksGetParams>(TasksGetParamsSchema);
 export const validateTasksCancelParams = lazyCompile<TasksCancelParams>(TasksCancelParamsSchema);
+export const validateTasksCreateParams = lazyCompile<TasksCreateParams>(TasksCreateParamsSchema);
 export const validateConfigGetParams = lazyCompile<ConfigGetParams>(ConfigGetParamsSchema);
 export const validateConfigSetParams = lazyCompile<ConfigSetParams>(ConfigSetParamsSchema);
 export const validateConfigApplyParams = lazyCompile<ConfigApplyParams>(ConfigApplyParamsSchema);
@@ -926,6 +931,8 @@ export {
   TasksGetResultSchema,
   TasksCancelParamsSchema,
   TasksCancelResultSchema,
+  TasksCreateParamsSchema,
+  TasksCreateResultSchema,
   ConfigGetParamsSchema,
   ConfigSetParamsSchema,
   ConfigApplyParamsSchema,
@@ -1192,6 +1199,8 @@ export type {
   TasksGetResult,
   TasksCancelParams,
   TasksCancelResult,
+  TasksCreateParams,
+  TasksCreateResult,
   CronJob,
   CronListParams,
   CronStatusParams,
